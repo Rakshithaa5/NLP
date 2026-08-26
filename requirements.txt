@@ -1,0 +1,33 @@
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9       # file uploads
+python-dotenv>=1.0.0
+
+# ── Audio / Speech ────────────────────────────────────────────────────────────
+faster-whisper>=1.0.0
+
+# ── NLP ───────────────────────────────────────────────────────────────────────
+spacy>=3.7.0
+nltk>=3.8.0
+
+# ── ML / Classification ───────────────────────────────────────────────────────
+scikit-learn>=1.4.0
+numpy>=1.26.0
+pandas>=2.2.0
+
+# ── Transformers / Summarization ──────────────────────────────────────────────
+transformers>=4.40.0
+torch>=2.2.0                  # or install CPU-only variant: torch --index-url https://download.pytorch.org/whl/cpu
+sentencepiece>=0.2.0           # T5 / FLAN-T5 tokenizer
+
+# ── PDF export ────────────────────────────────────────────────────────────────
+reportlab>=4.1.0
+
+# ── Database (uncomment the one you choose) ───────────────────────────────────
+# firebase-admin>=6.5.0
+# supabase>=2.4.0
+
+# ── Dev / testing ─────────────────────────────────────────────────────────────
+pytest>=8.0.0
+httpx>=0.27.0                  # async test client for FastAPI
