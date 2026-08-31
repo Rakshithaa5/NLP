@@ -10,6 +10,10 @@ Phase 0: /health (server) + /health/db (Supabase ping). NLP routes added in late
 import os
 import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger("meeting_analyzer")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
