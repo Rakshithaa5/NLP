@@ -153,36 +153,54 @@ async def upload_file(file: UploadFile = File(...)):
 
     # 5. Persist to Supabase ────────────────────────────────────────────────────
     upload_ts = datetime.now(timezone.utc).isoformat()
-    meeting_record = {
-        "id": file_id,
-        "filename": original_filename,
-        "file_size_bytes": total_bytes,
-        "duration": transcript["duration"],
-        "language": transcript["language"],
-        "full_text": transcript["full_text"],
-        "segments": transcript["segments"],
-        "uploaded_at": upload_ts,
-        "status": "transcribed",
+    # Column names match the Supabase schema:
+    #   duration_sec  (REAL)  ← NOT "duration"
+    #   transcript    (TEXT)  ← full text blob
+    #   status CHECK constraint accepts: uploaded | processing | done | error
+    meeting_row = {
+        "id":           file_id,
+        "filename":     original_filename,
+        "file_path":    str(raw_path),
+        "duration_sec": transcript["duration"],
+        "language":     transcript["language"],
+        "transcript":   transcript["full_text"],
+        "uploaded_at":  upload_ts,
+        "status":       "done",
     }
 
     db = _get_db()
     if db:
         try:
-            db.table("meetings").insert(meeting_record).execute()
+            db.table("meetings").insert(meeting_row).execute()
             logger.info("Meeting [%s] persisted to Supabase.", file_id)
+
+            # Persist individual segments to transcript_segments table
+            if transcript["segments"]:
+                segment_rows = [
+                    {
+                        "meeting_id": file_id,
+                        "start_sec":  seg["start"],
+                        "end_sec":    seg["end"],
+                        "text":       seg["text"],
+                    }
+                    for seg in transcript["segments"]
+                ]
+                db.table("transcript_segments").insert(segment_rows).execute()
+                logger.info("Inserted %d segments for [%s].", len(segment_rows), file_id)
+
         except Exception as exc:
             logger.warning("Supabase insert failed (continuing without DB): %s", exc)
 
-    # 6. Return ─────────────────────────────────────────────────────────────────
+    # 6. Return — shape matches what TranscriptPreview.jsx expects ───────────────
     return JSONResponse(
         status_code=200,
         content={
-            "file_id": file_id,
-            "filename": original_filename,
-            "duration": transcript["duration"],
-            "language": transcript["language"],
-            "segments": transcript["segments"],
-            "full_text": transcript["full_text"],
+            "file_id":     file_id,
+            "filename":    original_filename,
+            "duration":    transcript["duration"],   # frontend key stays "duration"
+            "language":    transcript["language"],
+            "segments":    transcript["segments"],
+            "full_text":   transcript["full_text"],
             "uploaded_at": upload_ts,
         },
     )
@@ -193,29 +211,54 @@ async def upload_file(file: UploadFile = File(...)):
 async def get_transcript(file_id: str):
     """
     Return the stored transcript and metadata for a given meeting ID.
-    Looks up Supabase first; falls back to local disk if DB is unavailable.
+    Reconstructs the frontend-expected shape from the Supabase schema:
+      meetings.duration_sec  → response.duration
+      meetings.transcript    → response.full_text
+      transcript_segments.*  → response.segments
+    Falls back to local disk re-transcription if DB is unavailable.
     """
     db = _get_db()
     if db:
         try:
-            resp = (
+            row = (
                 db.table("meetings")
-                .select("*")
+                .select("id, filename, duration_sec, language, transcript, uploaded_at, status")
                 .eq("id", file_id)
                 .single()
                 .execute()
             )
-            if resp.data:
-                return JSONResponse(content=resp.data)
+            if row.data:
+                # Fetch segments from child table
+                segs_resp = (
+                    db.table("transcript_segments")
+                    .select("start_sec, end_sec, text")
+                    .eq("meeting_id", file_id)
+                    .order("start_sec")
+                    .execute()
+                )
+                segments = [
+                    {"start": s["start_sec"], "end": s["end_sec"], "text": s["text"]}
+                    for s in (segs_resp.data or [])
+                ]
+                m = row.data
+                return JSONResponse(content={
+                    "file_id":     m["id"],
+                    "filename":    m["filename"],
+                    "duration":    m["duration_sec"],   # normalise to frontend key
+                    "language":    m["language"],
+                    "full_text":   m["transcript"],
+                    "segments":    segments,
+                    "uploaded_at": m["uploaded_at"],
+                    "status":      m["status"],
+                })
         except Exception as exc:
             logger.warning("DB lookup failed, trying disk: %s", exc)
 
-    # Fallback: serve from local file store
+    # Fallback: serve from local file store (re-transcribe from saved WAV)
     wav_path = _DATA_DIR / file_id / "audio.wav"
     if not wav_path.exists():
         raise HTTPException(status_code=404, detail=f"Meeting '{file_id}' not found.")
 
-    # Re-transcribe from disk if DB was unavailable
     try:
         transcript = transcribe(str(wav_path))
     except Exception as exc:
@@ -223,10 +266,10 @@ async def get_transcript(file_id: str):
 
     return JSONResponse(
         content={
-            "file_id": file_id,
-            "duration": transcript["duration"],
-            "language": transcript["language"],
-            "segments": transcript["segments"],
+            "file_id":   file_id,
+            "duration":  transcript["duration"],
+            "language":  transcript["language"],
+            "segments":  transcript["segments"],
             "full_text": transcript["full_text"],
         }
     )
@@ -241,11 +284,16 @@ async def list_meetings():
         try:
             resp = (
                 db.table("meetings")
-                .select("id, filename, duration, language, uploaded_at, status")
+                .select("id, filename, duration_sec, language, uploaded_at, status")
                 .order("uploaded_at", desc=True)
                 .execute()
             )
-            return JSONResponse(content={"meetings": resp.data or []})
+            # Normalise duration_sec → duration for frontend consistency
+            meetings = [
+                {**m, "duration": m.pop("duration_sec")}
+                for m in (resp.data or [])
+            ]
+            return JSONResponse(content={"meetings": meetings})
         except Exception as exc:
             logger.warning("DB list failed: %s", exc)
 
