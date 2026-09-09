@@ -3,8 +3,8 @@
  *
  * All REST calls to the backend are centralized here.
  * Phase 1: uploadMeeting, getTranscript, listMeetings, checkHealth.
- * Phase 2–3: add analyzeMeeting, getAnalysis.
- * Phase 4: add exportPdf.
+ * Phase 2: analyzeMeeting (trigger pipeline), getAnalysis (retrieve results).
+ * Phase 4: exportPdf.
  *
  * Base URL is read from the VITE_API_BASE_URL env variable,
  * falling back to the Vite dev proxy (/api) so the proxy config in
@@ -102,17 +102,41 @@ export async function listMeetings() {
   return _handleResponse(res)
 }
 
-// ── Phase 2–3 (stubs — implement in the next phase) ──────────────────────────
+// ── Phase 2 ───────────────────────────────────────────────────────────────────
 
 /**
- * [STUB — Phase 2]
  * Trigger the NLP analysis pipeline for a given file ID.
- * @param {string} fileId
- * @returns {Promise<object>} full analysis payload
+ * Calls POST /api/analysis/{fileId} which runs:
+ *   preprocessing → NER → classification → topics
+ *
+ * @param {string} fileId  The UUID returned by uploadMeeting.
+ * @returns {Promise<{
+ *   file_id: string,
+ *   analyzed_at: string,
+ *   sentences: string[],
+ *   entities: Array<{text: string, label: string, start_char: number, end_char: number}>,
+ *   classifications: Array<{sentence: string, label: string, confidence: number}>,
+ *   topics: {keywords: string[], topics: Array<{id: number, terms: string[], weight: number}>}
+ * }>}
  */
 export async function analyzeMeeting(fileId) {
-  throw new Error('analyzeMeeting — implement in Phase 2')
+  const res = await fetch(`${BASE}/api/analysis/${fileId}`, { method: 'POST' })
+  return _handleResponse(res)
 }
+
+/**
+ * Retrieve previously stored NLP analysis results for a meeting.
+ * Calls GET /api/analysis/{fileId}.
+ *
+ * @param {string} fileId
+ * @returns {Promise<object>} stored analysis payload
+ */
+export async function getAnalysis(fileId) {
+  const res = await fetch(`${BASE}/api/analysis/${fileId}`)
+  return _handleResponse(res)
+}
+
+// ── Phase 4 (stub) ────────────────────────────────────────────────────────────
 
 /**
  * [STUB — Phase 4]
