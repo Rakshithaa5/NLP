@@ -3,6 +3,7 @@
  *
  * Phase 1: Displays the Faster-Whisper transcript returned from the backend.
  *   - Shows meeting metadata (filename, duration, language)
+ * Phase 4: Analyze button enabled — navigates to /dashboard/:fileId.
  *   - Renders time-stamped segments
  *   - Renders full text in a copyable block
  *   - "Analyze" button (stub — Phase 2) shown but disabled
@@ -134,26 +135,26 @@ export default function TranscriptPreview() {
         ))}
       </div>
 
-      {/* Phase 2 CTA (disabled) */}
+      {/* Analyze CTA — navigates to Dashboard (Phase 4) */}
       <div className="card" style={{ marginBottom: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <p style={{ fontWeight: 700, marginBottom: 4 }}>Ready for NLP Analysis</p>
           <p style={{ fontSize: 13, color: 'var(--clr-text-muted)' }}>
-            Phase 2 will run NER, topic modeling, and sentence classification on this transcript.
+            Run the full NLP pipeline — NER, topic modeling, classification, action items, decisions, and AI summarization.
           </p>
         </div>
         <button
           id="analyze-btn"
-          disabled
-          title="Coming in Phase 2"
+          onClick={() => navigate(`/dashboard/${fileId}`)}
           style={{
             padding: '10px 24px', borderRadius: 'var(--radius-sm)',
             background: 'var(--grad-brand)', color: '#fff', fontWeight: 700, fontSize: 14,
-            border: 'none', cursor: 'not-allowed', opacity: 0.5,
+            border: 'none', cursor: 'pointer',
             whiteSpace: 'nowrap',
+            boxShadow: 'var(--glow-primary)',
           }}
         >
-          Analyze Meeting →
+          🧠 Analyze Meeting →
         </button>
       </div>
 

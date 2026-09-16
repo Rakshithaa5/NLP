@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from backend.routes import upload, analysis
+from backend.routes import upload, analysis, report
 
 load_dotenv()
 
@@ -41,8 +41,9 @@ app.add_middleware(
 )
 
 # ── Routers ──────────────────────────────────────────────────────────────────
-app.include_router(upload.router, prefix="/api/upload", tags=["upload"])
-app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
+app.include_router(upload.router,    prefix="/api/upload",   tags=["upload"])
+app.include_router(analysis.router,  prefix="/api/analysis", tags=["analysis"])
+app.include_router(report.router,    prefix="/api/report",   tags=["report"])
 
 
 # ── Health checks ────────────────────────────────────────────────────────────

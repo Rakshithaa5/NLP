@@ -1,8 +1,7 @@
 /**
  * components/NavBar.jsx — Top navigation bar.
  *
- * Phase 1: Static nav with Home link + backend health indicator.
- * Phase 4: Add History link and active-route styling.
+ * Phase 4: History link added, active-route styling, Phase 4 complete.
  */
 
 import { useEffect, useState } from 'react'
@@ -20,8 +19,8 @@ export default function NavBar() {
   }, [])
 
   const navLinks = [
-    { to: '/', label: 'Upload', id: 'nav-upload' },
-    // Phase 4: { to: '/history', label: 'History', id: 'nav-history' },
+    { to: '/',        label: '⬆ Upload',  id: 'nav-upload'  },
+    { to: '/history', label: '🕐 History', id: 'nav-history' },
   ]
 
   return (
@@ -54,7 +53,8 @@ export default function NavBar() {
       {/* Nav links */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {navLinks.map(link => {
-          const isActive = location.pathname === link.to
+          const isActive = location.pathname === link.to ||
+            (link.to !== '/' && location.pathname.startsWith(link.to))
           return (
             <Link
               key={link.to}

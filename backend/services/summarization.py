@@ -149,10 +149,26 @@ def _load_abstractive_pipeline(model_name: str):
     """
     Load (or reuse) the HuggingFace summarization pipeline.
     Cached at module level so the model is only loaded once per worker.
+
+    Raises ImportError immediately if PyTorch is not installed so that
+    the caller falls back to extractive summarization gracefully.
     """
     global _abstractive_pipeline, _abstractive_model_name
     if _abstractive_pipeline is not None and _abstractive_model_name == model_name:
         return _abstractive_pipeline
+
+    # ── Early torch check ──────────────────────────────────────────────────────
+    # Torch is required for HuggingFace summarization models. If it's not
+    # installed (e.g. blocked by Application Control policy), fall back early
+    # with a clear message rather than a confusing DLL error.
+    try:
+        import torch  # noqa: PLC0415
+        _ = torch.__version__   # force DLL load now so we catch the error here
+    except (ImportError, OSError) as exc:
+        raise ImportError(
+            f"PyTorch not available ({exc}). "
+            "Abstractive summarization is disabled — using extractive fallback."
+        ) from exc
 
     from transformers import pipeline as hf_pipeline  # noqa: PLC0415
 
@@ -162,7 +178,6 @@ def _load_abstractive_pipeline(model_name: str):
         "summarization",
         model=model_name,
         device=-1,
-        # Explicitly set tokenizer alongside model to suppress warnings
         tokenizer=model_name,
     )
     _abstractive_model_name = model_name

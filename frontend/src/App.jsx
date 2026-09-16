@@ -1,13 +1,14 @@
 /**
  * App.jsx — Root application component.
  *
- * Phase 1: React Router wired up with routes for Home and TranscriptPreview.
- * Phase 4: Add History route and Dashboard route.
+ * Phase 4: History and Dashboard routes wired in.
  */
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import NavBar from './components/NavBar'
 import Home from './pages/Home'
 import TranscriptPreview from './pages/TranscriptPreview'
+import Dashboard from './pages/Dashboard'
+import History from './pages/History'
 import './App.css'
 
 function App() {
@@ -17,10 +18,10 @@ function App() {
         <NavBar />
         <main>
           <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/transcript/:fileId" element={<TranscriptPreview />} />
-            {/* Phase 4: <Route path="/history" element={<History />} /> */}
-            {/* Phase 4: <Route path="/dashboard/:fileId" element={<Dashboard />} /> */}
+            <Route path="/"                       element={<Home />} />
+            <Route path="/transcript/:fileId"     element={<TranscriptPreview />} />
+            <Route path="/dashboard/:fileId"      element={<Dashboard />} />
+            <Route path="/history"                element={<History />} />
           </Routes>
         </main>
       </div>
