@@ -2,7 +2,7 @@
 routes/analysis.py — Analysis pipeline endpoint.
 
 Triggers the full NLP pipeline in the fixed order defined by the implementation plan:
-  preprocessing → NER → classification → topics
+  preprocessing → NER → classification → topics → actions → decisions → questions → summarization
 
 POST /api/analysis/{file_id}
   Fetches the stored transcript for file_id, runs the pipeline,
@@ -11,20 +11,23 @@ POST /api/analysis/{file_id}
 GET /api/analysis/{file_id}
   Returns the previously stored analysis results for file_id.
 
-Phase 2: full implementation (preprocessing, NER, classification, topics).
-Phase 3: will extend with actions, decisions, questions, summarization.
+Phase 2: preprocessing, NER, classification, topics.
+Phase 3: actions, decisions, questions, summarization — fully wired in.
 """
 
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from backend.services.preprocessing import preprocess
 from backend.services.ner import extract_entities
 from backend.services.classification import classify_sentences
 from backend.services.topics import extract_topics
+from backend.services.actions import extract_actions
+from backend.services.decisions import extract_decisions, extract_questions
+from backend.services.summarization import summarize
 
 logger = logging.getLogger("meeting_analyzer.analysis")
 
@@ -78,22 +81,32 @@ def _persist_analysis(file_id: str, payload: dict) -> None:
     Fails silently so a DB outage does not break the API response.
 
     Table schema (create in Supabase dashboard or via migration):
-      id           TEXT PRIMARY KEY REFERENCES meetings(id)
-      entities     JSONB
-      topics       JSONB
-      classifications JSONB
-      analyzed_at  TIMESTAMPTZ
+      id                TEXT PRIMARY KEY REFERENCES meetings(id)
+      entities          JSONB
+      topics            JSONB
+      classifications   JSONB
+      action_items      JSONB
+      decisions         JSONB
+      questions         JSONB
+      summary_extractive TEXT
+      summary_abstractive TEXT
+      analyzed_at       TIMESTAMPTZ
     """
     db = _get_db()
     if not db:
         return
 
     row = {
-        "id":               file_id,
-        "entities":         payload["entities"],
-        "topics":           payload["topics"],
-        "classifications":  payload["classifications"],
-        "analyzed_at":      datetime.now(timezone.utc).isoformat(),
+        "id":                  file_id,
+        "entities":            payload["entities"],
+        "topics":              payload["topics"],
+        "classifications":     payload["classifications"],
+        "action_items":        payload["action_items"],
+        "decisions":           payload["decisions"],
+        "questions":           payload["questions"],
+        "summary_extractive":  payload["summary"]["extractive"],
+        "summary_abstractive": payload["summary"]["abstractive"],
+        "analyzed_at":         datetime.now(timezone.utc).isoformat(),
     }
     try:
         db.table("analysis_results").upsert(row).execute()
@@ -112,7 +125,11 @@ def _fetch_stored_analysis(file_id: str) -> dict | None:
     try:
         row = (
             db.table("analysis_results")
-            .select("entities, topics, classifications, analyzed_at")
+            .select(
+                "entities, topics, classifications, "
+                "action_items, decisions, questions, "
+                "summary_extractive, summary_abstractive, analyzed_at"
+            )
             .eq("id", file_id)
             .single()
             .execute()
@@ -126,21 +143,32 @@ def _fetch_stored_analysis(file_id: str) -> dict | None:
 
 # ── Pipeline runner ────────────────────────────────────────────────────────────
 
-def run_nlp_pipeline(transcript_text: str) -> dict:
+def run_nlp_pipeline(
+    transcript_text: str,
+    abstractive_model: str = "facebook/bart-large-cnn",
+) -> dict:
     """
-    Execute the Phase 2 NLP pipeline in the fixed order:
+    Execute the full Phase 2 + Phase 3 NLP pipeline in the fixed order:
       preprocess → NER → classify_sentences → extract_topics
+      → extract_actions → extract_decisions → extract_questions → summarize
 
     Args:
-        transcript_text: Raw transcript string.
+        transcript_text:   Raw transcript string.
+        abstractive_model: HuggingFace model ID for abstractive summarization.
 
     Returns:
         Dict with keys:
-          "sentences"       — segmented sentence strings
-          "entities"        — NER results
-          "classifications" — per-sentence labels + confidence
-          "topics"          — TF-IDF keywords + LDA/NMF topic clusters
+          "sentences"         — segmented sentence strings
+          "entities"          — NER results
+          "classifications"   — per-sentence labels + confidence
+          "topics"            — TF-IDF keywords + LDA/NMF topic clusters
+          "action_items"      — structured action items (person/task/deadline/status)
+          "decisions"         — clean decision statements
+          "questions"         — unresolved question entries
+          "summary"           — {"extractive": str, "abstractive": str, "preferred": str}
     """
+    # ── Phase 2 pipeline ─────────────────────────────────────────────────────
+
     # Step 1: Preprocessing (spaCy + NLTK)
     logger.info("Running preprocessing …")
     preprocessed = preprocess(transcript_text)
@@ -159,11 +187,51 @@ def run_nlp_pipeline(transcript_text: str) -> dict:
     logger.info("Running topic extraction …")
     topics = extract_topics(sentences, n_topics=5)
 
+    # ── Phase 3 pipeline ─────────────────────────────────────────────────────
+
+    # Bucket sentences by classification label for Phase 3 services
+    action_sentences   = [c["sentence"] for c in classifications if c["label"] == "ACTION ITEM"]
+    decision_sentences = [c["sentence"] for c in classifications if c["label"] == "DECISION"]
+    question_sentences = [c["sentence"] for c in classifications if c["label"] == "QUESTION"]
+
+    # Step 5: Action item extraction (dependency parsing + NER + regex rules)
+    logger.info(
+        "Running action item extraction on %d ACTION ITEM sentences …",
+        len(action_sentences),
+    )
+    action_items = extract_actions(action_sentences, doc=doc)
+
+    # Step 6: Decision extraction (keyword/pattern detection)
+    logger.info(
+        "Running decision extraction on %d DECISION sentences …",
+        len(decision_sentences),
+    )
+    decisions = extract_decisions(decision_sentences)
+
+    # Step 7: Question / unresolved issue extraction
+    logger.info(
+        "Running question extraction on %d QUESTION sentences …",
+        len(question_sentences),
+    )
+    questions = extract_questions(question_sentences)
+
+    # Step 8: Summarization (extractive TF-IDF/TextRank + abstractive BART/T5)
+    logger.info("Running summarization …")
+    summary = summarize(
+        transcript_text,
+        n_extractive_sentences=5,
+        abstractive_model=abstractive_model,
+    )
+
     return {
         "sentences":       sentences,
         "entities":        entities,
         "classifications": classifications,
         "topics":          topics,
+        "action_items":    action_items,
+        "decisions":       decisions,
+        "questions":       questions,
+        "summary":         summary,
     }
 
 
@@ -171,11 +239,22 @@ def run_nlp_pipeline(transcript_text: str) -> dict:
 
 @router.post(
     "/{file_id}",
-    summary="Run NLP analysis pipeline on a stored meeting transcript",
+    summary="Run full NLP analysis pipeline (Phase 2 + Phase 3) on a stored meeting transcript",
 )
-async def analyze(file_id: str):
+async def analyze(
+    file_id: str,
+    abstractive_model: str = Query(
+        default="facebook/bart-large-cnn",
+        description=(
+            "HuggingFace model ID for abstractive summarization. "
+            "Options: 'facebook/bart-large-cnn', 'google/flan-t5-base', 't5-small'. "
+            "Use a lighter model if GPU/memory is constrained."
+        ),
+    ),
+):
     """
-    Run the full Phase 2 NLP pipeline on the transcript stored for *file_id*.
+    Run the full Phase 2 + Phase 3 NLP pipeline on the transcript stored
+    for *file_id*.
 
     Pipeline stages (in fixed order per implementation plan):
       1. Preprocessing   — spaCy sentence segmentation, tokenization,
@@ -183,9 +262,13 @@ async def analyze(file_id: str):
       2. NER             — spaCy EntityRuler + statistical NER
       3. Classification  — TF-IDF + Logistic Regression per sentence
       4. Topic modeling  — TF-IDF keywords + LDA topic clusters
+      5. Action items    — dependency parsing + NER + regex deadline extraction
+      6. Decisions       — keyword/pattern matching + negation detection
+      7. Questions       — unresolved issue detection + normalisation
+      8. Summarization   — extractive (TF-IDF/TextRank) + abstractive (BART/T5)
 
-    Returns JSON with keys:
-      file_id, sentences, entities, classifications, topics, analyzed_at
+    Returns JSON with full analysis payload including action items, decisions,
+    questions, and both summary variants.
     """
     logger.info("Analysis requested for meeting [%s]", file_id)
 
@@ -194,7 +277,10 @@ async def analyze(file_id: str):
 
     # Run pipeline
     try:
-        result = run_nlp_pipeline(transcript_text)
+        result = run_nlp_pipeline(
+            transcript_text,
+            abstractive_model=abstractive_model,
+        )
     except RuntimeError as exc:
         logger.exception("Pipeline failed for [%s]: %s", file_id, exc)
         raise HTTPException(status_code=422, detail=f"NLP pipeline error: {exc}")
@@ -210,10 +296,16 @@ async def analyze(file_id: str):
         content={
             "file_id":         file_id,
             "analyzed_at":     analyzed_at,
+            # Phase 2 outputs
             "sentences":       result["sentences"],
             "entities":        result["entities"],
             "classifications": result["classifications"],
             "topics":          result["topics"],
+            # Phase 3 outputs
+            "action_items":    result["action_items"],
+            "decisions":       result["decisions"],
+            "questions":       result["questions"],
+            "summary":         result["summary"],
         }
     )
 
@@ -228,6 +320,9 @@ async def get_analysis(file_id: str):
     """
     Return previously stored analysis results for *file_id*.
     If no analysis has been run yet, returns 404 with a helpful message.
+
+    The response includes all Phase 2 and Phase 3 fields so the frontend
+    dashboard can render the full meeting intelligence payload.
     """
     stored = _fetch_stored_analysis(file_id)
     if stored is None:
@@ -241,10 +336,20 @@ async def get_analysis(file_id: str):
 
     return JSONResponse(
         content={
-            "file_id":         file_id,
-            "entities":        stored.get("entities", []),
-            "classifications": stored.get("classifications", []),
-            "topics":          stored.get("topics", {}),
-            "analyzed_at":     stored.get("analyzed_at"),
+            "file_id":             file_id,
+            # Phase 2
+            "entities":            stored.get("entities", []),
+            "classifications":     stored.get("classifications", []),
+            "topics":              stored.get("topics", {}),
+            # Phase 3
+            "action_items":        stored.get("action_items", []),
+            "decisions":           stored.get("decisions", []),
+            "questions":           stored.get("questions", []),
+            "summary": {
+                "extractive":  stored.get("summary_extractive", ""),
+                "abstractive": stored.get("summary_abstractive", ""),
+                "preferred":   "abstractive",
+            },
+            "analyzed_at":         stored.get("analyzed_at"),
         }
     )
