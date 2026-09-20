@@ -232,8 +232,15 @@ export default function Dashboard() {
       const result = await getAnalysis(fileId)
       setData(result)
     } catch (e) {
-      // 404 means not yet analyzed — show "Run Analysis" prompt
-      if (e.message?.includes('404') || e.message?.toLowerCase().includes('not found')) {
+      // 404 / "No analysis found" means the meeting hasn't been analysed yet
+      // — show the "Run Analysis" prompt instead of an error screen.
+      const msg = (e.message || '').toLowerCase()
+      const isNotAnalysed =
+        msg.includes('404') ||
+        msg.includes('not found') ||
+        msg.includes('no analysis found') ||
+        msg.includes('call post')
+      if (isNotAnalysed) {
         setData(null)
       } else {
         setError(e.message || 'Failed to load analysis.')

@@ -25,8 +25,50 @@ _nlp = None
 _stop_words = None
 
 
+# EntityRuler patterns for TECHNOLOGY & PROJECT entities
+_TECH_PATTERNS = [
+    {"label": "TECHNOLOGY", "pattern": "Python"},
+    {"label": "TECHNOLOGY", "pattern": "JavaScript"},
+    {"label": "TECHNOLOGY", "pattern": "TypeScript"},
+    {"label": "TECHNOLOGY", "pattern": "Java"},
+    {"label": "TECHNOLOGY", "pattern": "Go"},
+    {"label": "TECHNOLOGY", "pattern": "Rust"},
+    {"label": "TECHNOLOGY", "pattern": "SQL"},
+    {"label": "TECHNOLOGY", "pattern": "React"},
+    {"label": "TECHNOLOGY", "pattern": "FastAPI"},
+    {"label": "TECHNOLOGY", "pattern": "Docker"},
+    {"label": "TECHNOLOGY", "pattern": "Kubernetes"},
+    {"label": "TECHNOLOGY", "pattern": "AWS"},
+    {"label": "TECHNOLOGY", "pattern": "GCP"},
+    {"label": "TECHNOLOGY", "pattern": "Azure"},
+    {"label": "TECHNOLOGY", "pattern": "Supabase"},
+    {"label": "TECHNOLOGY", "pattern": "Firebase"},
+    {"label": "TECHNOLOGY", "pattern": "PostgreSQL"},
+    {"label": "TECHNOLOGY", "pattern": "MySQL"},
+    {"label": "TECHNOLOGY", "pattern": "MongoDB"},
+    {"label": "TECHNOLOGY", "pattern": "Redis"},
+    {"label": "TECHNOLOGY", "pattern": "Kafka"},
+    {"label": "TECHNOLOGY", "pattern": "Terraform"},
+    {"label": "TECHNOLOGY", "pattern": "GitHub"},
+    {"label": "TECHNOLOGY", "pattern": "Jira"},
+    {"label": "TECHNOLOGY", "pattern": "Slack"},
+    {"label": "TECHNOLOGY", "pattern": "Whisper"},
+    {"label": "TECHNOLOGY", "pattern": "spaCy"},
+    {"label": "TECHNOLOGY", "pattern": "BERT"},
+    {"label": "TECHNOLOGY", "pattern": "GPT"},
+    {"label": "TECHNOLOGY", "pattern": "LLM"},
+    {"label": "TECHNOLOGY", "pattern": [{"LOWER": "machine"}, {"LOWER": "learning"}]},
+    {"label": "TECHNOLOGY", "pattern": [{"LOWER": "deep"}, {"LOWER": "learning"}]},
+    {"label": "TECHNOLOGY", "pattern": [{"LOWER": "natural"}, {"LOWER": "language"}, {"LOWER": "processing"}]},
+    {"label": "TECHNOLOGY", "pattern": [{"LOWER": "rest"}, {"LOWER": "api"}]},
+    {"label": "PROJECT", "pattern": [{"LOWER": "phase"}, {"IS_DIGIT": True}]},
+    {"label": "PROJECT", "pattern": [{"LOWER": "sprint"}, {"IS_DIGIT": True}]},
+    {"label": "PROJECT", "pattern": [{"LOWER": "version"}, {"IS_DIGIT": True}]},
+]
+
+
 def _get_nlp():
-    """Lazily load and cache the spaCy English model."""
+    """Lazily load and cache the spaCy English model with EntityRuler for NER."""
     global _nlp
     if _nlp is None:
         import spacy  # noqa: PLC0415
@@ -35,12 +77,15 @@ def _get_nlp():
         try:
             _nlp = spacy.load("en_core_web_sm")
         except OSError:
-            # Friendly error if the model has not been downloaded yet.
             raise RuntimeError(
                 "spaCy model 'en_core_web_sm' not found. "
                 "Run: python -m spacy download en_core_web_sm"
             )
-        logger.info("spaCy model loaded.")
+        # Add EntityRuler before ner so custom TECHNOLOGY/PROJECT patterns
+        # are recognised. Shared with ner.py to avoid loading a second nlp.
+        ruler = _nlp.add_pipe("entity_ruler", before="ner", config={"overwrite_ents": False})
+        ruler.add_patterns(_TECH_PATTERNS)
+        logger.info("spaCy model loaded with EntityRuler (%d patterns).", len(_TECH_PATTERNS))
     return _nlp
 
 

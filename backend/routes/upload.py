@@ -206,6 +206,32 @@ async def upload_file(file: UploadFile = File(...)):
     )
 
 
+# ── GET /api/upload/ (list all meetings) ─────────────────────────────────────
+# MUST be registered before /{file_id} so FastAPI doesn't swallow it as a param.
+@router.get("/", summary="List all uploaded meetings")
+async def list_meetings():
+    """Return a list of all uploaded meetings (id, filename, duration, uploaded_at)."""
+    db = _get_db()
+    if db:
+        try:
+            resp = (
+                db.table("meetings")
+                .select("id, filename, duration_sec, language, uploaded_at, status")
+                .order("uploaded_at", desc=True)
+                .execute()
+            )
+            # Normalise duration_sec → duration for frontend consistency
+            meetings = [
+                {**m, "duration": m.pop("duration_sec")}
+                for m in (resp.data or [])
+            ]
+            return JSONResponse(content={"meetings": meetings})
+        except Exception as exc:
+            logger.warning("DB list failed: %s", exc)
+
+    return JSONResponse(content={"meetings": [], "warning": "Database unavailable"})
+
+
 # ── GET /api/upload/{file_id} ─────────────────────────────────────────────────
 @router.get("/{file_id}", summary="Retrieve stored transcript for a meeting")
 async def get_transcript(file_id: str):
@@ -273,28 +299,3 @@ async def get_transcript(file_id: str):
             "full_text": transcript["full_text"],
         }
     )
-
-
-# ── GET /api/upload/ (list all meetings) ─────────────────────────────────────
-@router.get("/", summary="List all uploaded meetings")
-async def list_meetings():
-    """Return a list of all uploaded meetings (id, filename, duration, uploaded_at)."""
-    db = _get_db()
-    if db:
-        try:
-            resp = (
-                db.table("meetings")
-                .select("id, filename, duration_sec, language, uploaded_at, status")
-                .order("uploaded_at", desc=True)
-                .execute()
-            )
-            # Normalise duration_sec → duration for frontend consistency
-            meetings = [
-                {**m, "duration": m.pop("duration_sec")}
-                for m in (resp.data or [])
-            ]
-            return JSONResponse(content={"meetings": meetings})
-        except Exception as exc:
-            logger.warning("DB list failed: %s", exc)
-
-    return JSONResponse(content={"meetings": [], "warning": "Database unavailable"})

@@ -48,9 +48,14 @@ def _get_db():
 
 def _fetch_transcript(file_id: str) -> str:
     """
-    Retrieve the raw transcript text for *file_id* from Supabase.
-    Raises HTTPException(404) if the meeting or transcript is not found.
+    Retrieve the raw transcript text for *file_id*.
+    1. Try Supabase first.
+    2. Fall back to re-transcribing from the saved WAV on disk.
+    Raises HTTPException(404) only if neither source has the data.
     """
+    import os  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
     db = _get_db()
     if db:
         try:
@@ -67,6 +72,19 @@ def _fetch_transcript(file_id: str) -> str:
                     return transcript_text
         except Exception as exc:
             logger.warning("DB transcript fetch failed: %s", exc)
+
+    # Disk fallback — re-transcribe from the saved WAV
+    data_dir = Path(os.getenv("DATA_DIR", "data")).resolve()
+    wav_path = data_dir / file_id / "audio.wav"
+    if wav_path.exists():
+        logger.info("DB miss for [%s] — transcribing from disk: %s", file_id, wav_path)
+        try:
+            from backend.services.transcription import transcribe  # noqa: PLC0415
+            result = transcribe(str(wav_path))
+            return result["full_text"]
+        except Exception as exc:
+            logger.error("Disk transcription fallback failed for [%s]: %s", file_id, exc)
+            raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
 
     raise HTTPException(
         status_code=404,
