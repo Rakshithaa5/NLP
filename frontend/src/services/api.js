@@ -23,7 +23,9 @@ async function _handleResponse(res) {
     } catch {
       // response was not JSON
     }
-    throw new Error(detail)
+    const error = new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+    error.status = res.status
+    throw error
   }
   return res.json()
 }
@@ -141,9 +143,18 @@ export async function getAnalysis(fileId) {
  *
  * @param {string} fileId
  */
-export function exportPdf(fileId) {
-  const url = `${BASE}/api/report/${fileId}/pdf`
-  window.open(url, '_blank')
+export async function exportPdf(fileId) {
+  const response = await fetch(`${BASE}/api/report/${fileId}/pdf`)
+  if (!response.ok) return _handleResponse(response)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `meeting-${fileId}-report.pdf`
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────

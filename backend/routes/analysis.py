@@ -28,6 +28,8 @@ from backend.services.topics import extract_topics
 from backend.services.actions import extract_actions
 from backend.services.decisions import extract_decisions, extract_questions
 from backend.services.summarization import summarize
+from backend.services.intelligence import build_intelligence
+from backend.services.meeting_store import load_meeting, save_local, read_local
 
 logger = logging.getLogger("meeting_analyzer.analysis")
 
@@ -56,6 +58,9 @@ def _fetch_transcript(file_id: str) -> str:
     import os  # noqa: PLC0415
     from pathlib import Path  # noqa: PLC0415
 
+    cached = load_meeting(file_id, _get_db())
+    if cached and cached.get("full_text"):
+        return cached["full_text"]
     db = _get_db()
     if db:
         try:
@@ -110,6 +115,10 @@ def _persist_analysis(file_id: str, payload: dict) -> None:
       summary_abstractive TEXT
       analyzed_at       TIMESTAMPTZ
     """
+    try:
+        save_local(file_id, "analysis.json", payload)
+    except (OSError, ValueError) as exc:
+        logger.warning("Local analysis save failed: %s", exc)
     db = _get_db()
     if not db:
         return
@@ -137,6 +146,10 @@ def _fetch_stored_analysis(file_id: str) -> dict | None:
     """
     Return previously stored analysis results, or None if not found.
     """
+    local = read_local(file_id, "analysis.json")
+    if local:
+        return {**local, "summary_extractive": local.get("summary", {}).get("extractive", ""),
+                "summary_abstractive": local.get("summary", {}).get("abstractive", "")}
     db = _get_db()
     if not db:
         return None
@@ -164,6 +177,7 @@ def _fetch_stored_analysis(file_id: str) -> dict | None:
 def run_nlp_pipeline(
     transcript_text: str,
     abstractive_model: str = "facebook/bart-large-cnn",
+    language: str = "en",
 ) -> dict:
     """
     Execute the full Phase 2 + Phase 3 NLP pipeline in the fixed order:
@@ -189,6 +203,12 @@ def run_nlp_pipeline(
 
     # Step 1: Preprocessing (spaCy + NLTK)
     logger.info("Running preprocessing …")
+    if not transcript_text or not transcript_text.strip():
+        raise RuntimeError("Transcript is empty; no meeting report can be generated.")
+    if language and language.lower().split("-")[0] != "en":
+        return {"sentences": [], "entities": [], "classifications": [], "topics": {},
+                "action_items": [], "decisions": [], "questions": [],
+                "summary": {"extractive": transcript_text, "abstractive": "", "preferred": "extractive"}}
     preprocessed = preprocess(transcript_text)
     sentences = preprocessed["sentences"]
     doc       = preprocessed["doc"]
@@ -203,7 +223,7 @@ def run_nlp_pipeline(
 
     # Step 4: Topic extraction (TF-IDF keywords + LDA topic modeling)
     logger.info("Running topic extraction …")
-    topics = extract_topics(sentences, n_topics=5)
+    topics = extract_topics(sentences, n_topics=5, doc=doc)
 
     # ── Phase 3 pipeline ─────────────────────────────────────────────────────
 
@@ -237,7 +257,8 @@ def run_nlp_pipeline(
     logger.info("Running summarization …")
     summary = summarize(
         transcript_text,
-        n_extractive_sentences=5,
+        n_extractive_sentences=6,
+        focus_sentences=[t["evidence"] for t in topics.get("discussion", [])],
         abstractive_model=abstractive_model,
     )
 
@@ -259,7 +280,7 @@ def run_nlp_pipeline(
     "/{file_id}",
     summary="Run full NLP analysis pipeline (Phase 2 + Phase 3) on a stored meeting transcript",
 )
-async def analyze(
+def analyze(
     file_id: str,
     abstractive_model: str = Query(
         default="facebook/bart-large-cnn",
@@ -291,13 +312,15 @@ async def analyze(
     logger.info("Analysis requested for meeting [%s]", file_id)
 
     # Fetch transcript from DB (raises 404 if missing)
-    transcript_text = _fetch_transcript(file_id)
+    meeting = load_meeting(file_id, _get_db()) or {}
+    transcript_text = meeting.get("full_text") or _fetch_transcript(file_id)
 
     # Run pipeline
     try:
         result = run_nlp_pipeline(
             transcript_text,
             abstractive_model=abstractive_model,
+            language=meeting.get("language") or "en",
         )
     except RuntimeError as exc:
         logger.exception("Pipeline failed for [%s]: %s", file_id, exc)
@@ -306,6 +329,9 @@ async def analyze(
         logger.exception("Unexpected pipeline error for [%s]: %s", file_id, exc)
         raise HTTPException(status_code=500, detail=f"Internal pipeline error: {exc}")
 
+    result["intelligence"] = build_intelligence(result, transcript_text, meeting.get("segments"), meeting.get("language") or "en")
+    result["topics"]["intelligence"] = result["intelligence"]  # Existing JSONB column; no migration.
+    result["analyzed_at"] = datetime.now(timezone.utc).isoformat()
     # Persist to Supabase (best-effort)
     _persist_analysis(file_id, result)
 
@@ -324,6 +350,7 @@ async def analyze(
             "decisions":       result["decisions"],
             "questions":       result["questions"],
             "summary":         result["summary"],
+            "intelligence":    result["intelligence"],
         }
     )
 
@@ -366,8 +393,9 @@ async def get_analysis(file_id: str):
             "summary": {
                 "extractive":  stored.get("summary_extractive", ""),
                 "abstractive": stored.get("summary_abstractive", ""),
-                "preferred":   "abstractive",
+                "preferred":   "extractive",
             },
             "analyzed_at":         stored.get("analyzed_at"),
+            "intelligence":        stored.get("intelligence") or (stored.get("topics") or {}).get("intelligence"),
         }
     )

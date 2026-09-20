@@ -17,6 +17,10 @@ Phase 2: full implementation.
 """
 
 import logging
+import re
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+
+TOPIC_STOP = set(ENGLISH_STOP_WORDS) | set("yeah yes okay ok right meeting meetings let lets um uh actually basically really just like know think thanks thank hello hi going got things thing today everyone people said say sure well gonna want need look bit sort kind".split())
 
 logger = logging.getLogger("meeting_analyzer.topics")
 
@@ -44,11 +48,11 @@ def _build_tfidf_keywords(sentences: list[str], top_n: int = 20) -> list[str]:
         return []
 
     vectorizer = TfidfVectorizer(
-        stop_words="english",
+        stop_words=sorted(TOPIC_STOP),
         ngram_range=(1, 2),    # unigrams + bigrams catch "action item", "sprint velocity" etc.
         max_features=5_000,
         sublinear_tf=True,
-        token_pattern=r"\b[a-zA-Z][a-zA-Z0-9\-]*\b",
+        token_pattern=r"(?u)\b[^\W\d_][^\W_]+\b",
     )
 
     try:
@@ -97,16 +101,16 @@ def _build_topic_model(
     # LDA requires raw counts; NMF works best with TF-IDF
     if method == "lda":
         vectorizer = CountVectorizer(
-            stop_words="english",
+            stop_words=sorted(TOPIC_STOP),
             max_features=3_000,
-            token_pattern=r"\b[a-zA-Z][a-zA-Z0-9\-]*\b",
+            token_pattern=r"(?u)\b[^\W\d_][^\W_]+\b",
         )
     else:
         vectorizer = TfidfVectorizer(
-            stop_words="english",
+            stop_words=sorted(TOPIC_STOP),
             max_features=3_000,
             sublinear_tf=True,
-            token_pattern=r"\b[a-zA-Z][a-zA-Z0-9\-]*\b",
+            token_pattern=r"(?u)\b[^\W\d_][^\W_]+\b",
         )
 
     try:
@@ -168,6 +172,7 @@ def extract_topics(
     sentences: list[str],
     n_topics: int = 5,
     method: str = "lda",
+    doc=None,
 ) -> dict:
     """
     Extract key topics from the preprocessed transcript.
@@ -207,4 +212,36 @@ def extract_topics(
         len(topics),
     )
 
-    return {"keywords": keywords, "topics": topics}
+    return {"keywords": keywords, "topics": topics, "discussion": discussion_topics(doc, sentences, n_topics)}
+
+
+def discussion_topics(doc, sentences, limit=5):
+    """Rank real noun phrases; labels are transcript spans, not invented titles."""
+    if doc is None:
+        from backend.services.preprocessing import _get_nlp
+        doc = _get_nlp()(" ".join(sentences))
+    phrases = {}
+    for chunk in doc.noun_chunks:
+        tokens = list(chunk)
+        while tokens and (tokens[0].is_stop or tokens[0].pos_ in {"DET", "PRON", "ADJ", "CCONJ"}):
+            tokens.pop(0)
+        if not 2 <= len(tokens) <= 5 or not any(t.pos_ == "NOUN" for t in tokens):
+            continue
+        if any(not t.is_alpha or len(t.text) < 2 or t.lower_ in TOPIC_STOP for t in tokens):
+            continue
+        if tokens[-1].lower_ in {"owner", "team", "coach", "people", "participant", "participants", "case", "context", "benefit", "outcome", "thing", "company", "partnership", "fragment", "detail", "user", "users"}:
+            continue
+        phrase = doc[tokens[0].i:tokens[-1].i + 1].text
+        key = phrase.casefold()
+        phrases.setdefault(key, {"label": phrase, "keywords": [t.lower_ for t in tokens],
+                                 "evidence": chunk.sent.text.strip(), "count": 0})["count"] += 1
+    ranked = sorted(phrases.values(), key=lambda x: (-x["count"], -len(x["keywords"]), x["label"]))
+    selected = []
+    for item in ranked:
+        if any(set(item["keywords"]) <= set(other["keywords"]) for other in selected):
+            continue
+        item["relevance"] = round(item.pop("count") / max(1, len(sentences)), 4)
+        selected.append(item)
+        if len(selected) == limit:
+            break
+    return selected

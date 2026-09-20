@@ -65,7 +65,14 @@ def extract_entities(doc_or_text) -> list[dict]:
 
     for ent in doc.ents:
         mapped_label = _LABEL_MAP.get(ent.label_, ent.label_)
+        if mapped_label == "PERSON":
+            import re
+            # An explicit appositive organization description overrides a name guess.
+            if re.search(re.escape(ent.text) + r",\s*(?:the\s+)?(?:\w+\s+){0,4}(?:company|university|organization)\b", doc.text, re.I):
+                mapped_label = "ORG"
         if mapped_label not in _KEEP_LABELS:
+            continue
+        if not valid_entity(ent, mapped_label):
             continue
         key = (ent.text.strip().lower(), mapped_label)
         if key in seen:
@@ -80,3 +87,25 @@ def extract_entities(doc_or_text) -> list[dict]:
 
     logger.info("NER complete — %d entities extracted.", len(entities))
     return entities
+
+
+def valid_entity(ent, label):
+    """Require lexical/context evidence in addition to the NER prediction."""
+    from backend.services.topics import TOPIC_STOP
+    tokens = [t for t in ent if not t.is_punct and not t.is_space]
+    if not tokens or len(ent.text.strip()) < 2:
+        return False
+    if all(t.lower_ in TOPIC_STOP for t in tokens):
+        return False
+    if label in {"PERSON", "ORG", "LOCATION"}:
+        if any(t.lower_ in {"this", "that", "benefit", "benefits", "okay", "yeah"} for t in tokens):
+            return False
+        if not any(t.pos_ == "PROPN" and (t.text[0].isupper() or not t.text.isascii()) for t in tokens):
+            return False
+        if label == "PERSON" and any(t.pos_ not in {"PROPN", "PART"} for t in tokens):
+            return False
+    if label in {"DATE", "TIME"}:
+        import re
+        if not re.search(r"\d|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|today|tomorrow|yesterday|next|last|week|month|year|morning|afternoon|evening|tonight|noon", ent.text, re.I):
+            return False
+    return True

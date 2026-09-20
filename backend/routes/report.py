@@ -11,7 +11,7 @@ Report sections:
   2. Executive Summary — abstractive (preferred) or extractive fallback
   3. Action Items — person / task / deadline / status table
   4. Decisions — numbered list of clean decision statements
-  5. Unresolved Questions — numbered list
+  5. Questions raised — numbered list
   6. Key Topics — TF-IDF keywords + topic cluster overview
   7. Named Entities — grouped by type (PERSON, ORG, DATE, …)
   8. Full Transcript — paginated raw text appendix
@@ -22,6 +22,7 @@ Phase 4: full implementation.
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
+from html import escape
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -48,6 +49,13 @@ def _fetch_report_data(file_id: str) -> dict:
     Fetch meeting metadata + full analysis payload from Supabase.
     Raises HTTPException(404) if meeting or analysis not found.
     """
+    from backend.services.meeting_store import load_meeting, read_local
+    meeting = load_meeting(file_id, _get_db())
+    local = read_local(file_id, "analysis.json")
+    if meeting and local:
+        return {"meeting": {**meeting, "duration_sec": meeting.get("duration"), "transcript": meeting.get("full_text", "")},
+                "analysis": {**local, "summary_extractive": local.get("summary", {}).get("extractive", ""),
+                             "summary_abstractive": local.get("summary", {}).get("abstractive", "")}}
     db = _get_db()
     if not db:
         raise HTTPException(
@@ -116,7 +124,7 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
     meeting  = data["meeting"]
     analysis = data["analysis"]
 
-    filename    = meeting.get("filename", "Meeting Recording")
+    filename    = meeting.get("filename") or "Meeting Recording"
     duration    = meeting.get("duration_sec", 0)
     language    = (meeting.get("language") or "").upper()
     uploaded_at = meeting.get("uploaded_at", "")
@@ -131,7 +139,20 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
     summary_ext  = analysis.get("summary_extractive",  "")
     analyzed_at  = analysis.get("analyzed_at", "")
 
-    summary = summary_abs or summary_ext or "No summary available."
+    intelligence = analysis.get("intelligence") or topics.get("intelligence")
+    if isinstance(intelligence, dict) and intelligence.get("version") == 2:
+        action_items = [{**item, "person": item.get("owner"), "original": item.get("evidence", "")}
+                        for item in intelligence.get("action_items", [])]
+        decisions = [{**item, "statement": item.get("decision", ""), "original": item.get("evidence", "")}
+                     for item in intelligence.get("decisions", [])]
+        questions = [{**item, "resolution_status": item.get("status", "Not assessed"), "original": item.get("evidence", "")}
+                     for item in intelligence.get("questions", [])]
+        highlights = list(intelligence.get("summary", []))
+        if intelligence.get("key_takeaway"):
+            highlights.append("Key takeaway: " + intelligence["key_takeaway"])
+        summary_ext = " ".join(highlights)
+
+    summary = summary_ext or "No transcript excerpt summary available. Re-analyse this meeting."
 
     # ── Style setup ───────────────────────────────────────────────────────────
     buf = BytesIO()
@@ -201,7 +222,7 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
     story.append(Spacer(1, 20 * mm))
     story.append(Paragraph("Meeting Intelligence Report", title_style))
     story.append(Spacer(1, 6))
-    story.append(Paragraph(filename, style("Normal", textColor=TEXT, fontSize=13, alignment=TA_CENTER)))
+    story.append(Paragraph(escape(filename), style("Normal", textColor=TEXT, fontSize=13, alignment=TA_CENTER)))
     story.append(Spacer(1, 10))
 
     meta_data = [
@@ -233,12 +254,9 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
 
     # ── Executive Summary ──────────────────────────────────────────────────────
     story += section("Executive Summary")
-    story.append(Paragraph(summary, body_style))
+    story.append(Paragraph(escape(summary), body_style))
     story.append(Spacer(1, 8))
 
-    if summary_abs and summary_ext and summary_abs != summary_ext:
-        story.append(Paragraph("Extractive Summary (TF-IDF / TextRank)", h2_style))
-        story.append(Paragraph(summary_ext, body_style))
 
     # ── Action Items ──────────────────────────────────────────────────────────
     story += section(f"Action Items ({len(action_items)})")
@@ -251,7 +269,7 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
             status_color = {"Completed": GREEN, "In Progress": AMBER, "Blocked": RED}.get(status, MUTED)
             tbl_data.append([
                 a.get("person") or "—",
-                a.get("task") or a.get("original", ""),
+                Paragraph(escape(a.get("task") or a.get("original", "")), body_style),
                 a.get("deadline") or "—",
                 status,
             ])
@@ -285,38 +303,29 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
     else:
         for i, d in enumerate(decisions, 1):
             stmt = d.get("statement", d.get("original", ""))
-            story.append(Paragraph(f"<b>{i}.</b> {stmt}", body_style))
+            story.append(Paragraph(f"<b>{i}.</b> {escape(stmt)}", body_style))
             story.append(Spacer(1, 3))
 
-    # ── Unresolved Questions ───────────────────────────────────────────────────
-    story += section(f"Unresolved Questions ({len(questions)})")
+    # ── Questions raised ───────────────────────────────────────────────────
+    story += section(f"Questions raised ({len(questions)})")
     if not questions:
-        story.append(Paragraph("No unresolved questions detected.", muted_style))
+        story.append(Paragraph("No questions detected.", muted_style))
     else:
         for i, q in enumerate(questions, 1):
             q_text = q.get("question", q.get("original", ""))
             flag = " ⚡ <i>Action required</i>" if q.get("is_action_required") else ""
-            story.append(Paragraph(f"<b>{i}.</b> {q_text}{flag}", body_style))
+            story.append(Paragraph(f"<b>{i}.</b> {escape(q_text)} (Resolution: {escape(q.get('resolution_status', 'Not assessed'))}){flag}", body_style))
+            if q.get("answer"):
+                story.append(Paragraph("Answer: " + escape(q["answer"]), body_style))
             story.append(Spacer(1, 3))
 
     # ── Key Topics ────────────────────────────────────────────────────────────
     story += section("Key Topics")
-    keywords = topics.get("keywords", [])
-    if keywords:
-        story.append(Paragraph(
-            "<b>Top Keywords (TF-IDF):</b> " + ", ".join(keywords[:20]),
-            body_style,
-        ))
-        story.append(Spacer(1, 6))
-
-    topic_clusters = topics.get("topics", [])
-    for t in topic_clusters[:5]:
-        terms = ", ".join(t.get("terms", [])[:8])
-        story.append(Paragraph(f"<b>Topic {t.get('id', '')+1}:</b> {terms}", body_style))
-        story.append(Spacer(1, 3))
-
-    if not keywords and not topic_clusters:
-        story.append(Paragraph("No topics extracted.", muted_style))
+    discussion = topics.get("discussion", [])
+    for topic in discussion:
+        story.append(Paragraph(escape(topic.get("label", "")), body_style))
+    if not discussion:
+        story.append(Paragraph("No reliable discussion topics identified.", muted_style))
 
     # ── Named Entities ────────────────────────────────────────────────────────
     story += section("Named Entities")
@@ -329,7 +338,7 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
             grouped.setdefault(e["label"], []).append(e["text"])
 
         for label, texts in sorted(grouped.items()):
-            story.append(Paragraph(f"<b>{label}:</b> {', '.join(texts)}", body_style))
+            story.append(Paragraph(f"<b>{label}:</b> {escape(', '.join(texts))}", body_style))
             story.append(Spacer(1, 3))
 
     # ── Full Transcript ───────────────────────────────────────────────────────
@@ -339,7 +348,7 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
         # Chunk to avoid single huge paragraph
         chunks = [transcript[i:i+2000] for i in range(0, len(transcript), 2000)]
         for chunk in chunks:
-            story.append(Paragraph(chunk, muted_style))
+            story.append(Paragraph(escape(chunk), muted_style))
             story.append(Spacer(1, 6))
 
     # ── Build ─────────────────────────────────────────────────────────────────
@@ -390,7 +399,7 @@ async def download_pdf(file_id: str):
             detail=f"PDF generation error: {exc}",
         )
 
-    filename = data["meeting"].get("filename", "meeting").rsplit(".", 1)[0]
+    filename = (data["meeting"].get("filename") or "meeting").rsplit(".", 1)[0]
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in filename)
     disposition = f'attachment; filename="{safe_name}_report.pdf"'
 

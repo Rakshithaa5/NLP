@@ -196,11 +196,26 @@ def classify_sentences(sentences: list[str]) -> list[dict]:
     results = []
     for sentence, label, prob_row in zip(sentences, labels, probs):
         confidence = float(prob_row.max())
+        from backend.services.actions import is_action
+        from backend.services.decisions import _extract_decision_statement, _is_unresolved
+        model_label = str(label)
+        if _extract_decision_statement(sentence):
+            label = "DECISION"
+        elif is_action(sentence):
+            label = "ACTION ITEM"
+        elif "?" in sentence or _is_unresolved(sentence):
+            label = "QUESTION"
+        elif label in {"ACTION ITEM", "DECISION", "QUESTION"} or confidence < 0.55:
+            label = "DISCUSSION"
+
         results.append(
             {
                 "sentence":   sentence,
                 "label":      label,
                 "confidence": round(confidence, 4),
+                "model_label": model_label,
+                "model_confidence": round(confidence, 4),
+                "method": "model_with_rule_validation",
             }
         )
 

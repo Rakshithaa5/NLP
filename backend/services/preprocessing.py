@@ -162,18 +162,12 @@ def preprocess(text: str) -> dict:
 
     # Step 1–3: normalize → parse (sentence segmentation + tokenization happen
     # inside spaCy's pipeline in a single pass; no need to split first).
-    cleaned_text = _normalize(text)
+    cleaned_text = text.strip()  # Preserve evidence and original punctuation/fillers.
     logger.info("Preprocessing transcript (%d chars) …", len(cleaned_text))
 
     # spaCy max_length guard — increase if transcripts are very long.
     if len(cleaned_text) > nlp.max_length:
-        logger.warning(
-            "Transcript (%d chars) exceeds spaCy max_length (%d). "
-            "Truncating for preprocessing — NLP results may be partial.",
-            len(cleaned_text),
-            nlp.max_length,
-        )
-        cleaned_text = cleaned_text[: nlp.max_length]
+        raise RuntimeError("Transcript exceeds the NLP size limit; split the recording before analysis.")
 
     doc = nlp(cleaned_text)
 

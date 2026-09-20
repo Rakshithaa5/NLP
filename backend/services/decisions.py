@@ -111,30 +111,24 @@ def _extract_decision_statement(sentence: str) -> Optional[str]:
 
     Returns None if no strong decision signal is found.
     """
-    clean = _clean_sentence(sentence)
-
-    m = _DECISION_LEAD_RE.search(clean)
-    if m:
-        if _has_negation_before_indicator(clean, m.start()):
-            # Negated — not a definitive decision
-            logger.debug("Negated decision indicator ignored: '%s'", clean[:80])
-            return None
-
-        # Extract the portion after the indicator verb as the core statement
-        after = clean[m.end():].strip().lstrip(",;:")
-        if after:
-            # Capitalise and ensure sentence ends with a period
-            statement = after[0].upper() + after[1:]
-            if not statement.endswith((".","!","?")):
-                statement += "."
-            return statement
-        else:
-            # Indicator verb was at the very end — return the whole clean sentence
-            return clean if clean.endswith(".") else clean + "."
-
-    # No indicator found — return the sentence as-is (classification already
-    # flagged it as DECISION, so we trust that signal)
-    return (clean if clean.endswith(".") else clean + ".") if clean else None
+    # Keep the full proposition: removing the decision verb loses polarity,
+    # subject and scope (e.g. "approved" versus "rejected").
+    clean = sentence.strip()
+    if not clean or "?" in clean:
+        return None
+    if re.search(r"\b(if|unless|might|maybe|perhaps|could|should|would|hope|propose|suggest)\b", clean, re.I):
+        return None
+    indicator = re.search(r"\b(decided|decides|agreed|approved|rejected|confirmed|resolved|selected|adopted|cancelled|canceled|finalized|finalised)\b|\bdecision\s*:", clean, re.I)
+    if not indicator or _has_negation_before_indicator(clean, indicator.start()):
+        return None
+    from backend.services.preprocessing import _get_nlp
+    doc = _get_nlp()(clean)
+    predicate = next((t for t in doc if t.idx <= indicator.start() < t.idx + len(t.text)), None)
+    if predicate is None or predicate.pos_ != "VERB":
+        return None
+    if not any(c.dep_ in {"dobj", "obj", "xcomp", "ccomp", "prep", "nsubjpass"} for c in predicate.children):
+        return None
+    return clean
 
 
 def _is_unresolved(sentence: str) -> bool:
@@ -191,11 +185,8 @@ def extract_decisions(decision_sentences: list[str]) -> list[dict]:
             continue
 
         statement = _extract_decision_statement(sentence)
-        if statement is None:
-            # Fallback: use cleaned sentence
-            statement = _clean_sentence(sentence)
-            if not statement.endswith("."):
-                statement += "."
+        if statement is None or any(r["statement"].casefold() == statement.casefold() for r in results):
+            continue
 
         results.append({
             "statement": statement,
@@ -210,7 +201,7 @@ def extract_decisions(decision_sentences: list[str]) -> list[dict]:
     return results
 
 
-def extract_questions(question_sentences: list[str]) -> list[dict]:
+def extract_questions(question_sentences: list[str], context: list[str] | None = None) -> list[dict]:
     """
     Accept sentences pre-classified as QUESTION and format them as
     Unresolved Question entries.
@@ -241,12 +232,17 @@ def extract_questions(question_sentences: list[str]) -> list[dict]:
         if not sentence:
             continue
 
-        question = _format_question(sentence)
+        if not meaningful_question(sentence):
+            continue
+        if any(r["question"].casefold() == sentence.casefold() for r in results):
+            continue
+        question = sentence
         is_action_required = _is_unresolved(sentence)
 
         results.append({
             "question":           question,
             "is_action_required": is_action_required,
+            "resolution_status": "Marked open in this excerpt" if is_action_required else "Not assessed",
             "original":           sentence,
         })
 
@@ -258,3 +254,14 @@ def extract_questions(question_sentences: list[str]) -> list[dict]:
         sum(1 for r in results if r["is_action_required"]),
     )
     return results
+
+
+def meaningful_question(sentence):
+    text = sentence.strip().casefold()
+    if re.search(r"^(?:right|okay|ok|yes|yeah)[?.!]*$|do you know what i mean|you know what i mean|can (?:you|everyone) hear me|does that make sense|how are you|can you imagine|are you wondering|how about showing|rabbit hole|have a lot to show|was it useful|how do you know if", text):
+        return False
+    # Follow-up questions need a concrete subject, not a conversational pronoun.
+    from backend.services.preprocessing import _get_nlp
+    doc = _get_nlp()(sentence)
+    nouns = [t for t in doc if t.pos_ in {"NOUN", "PROPN"} and t.lower_ not in {"thing", "things", "time", "everyone", "anyone"}]
+    return (bool(nouns) or any(t.lemma_ in {"launch", "ship", "release", "deploy", "deliver"} for t in doc)) and len(re.findall(r"\w+", text)) >= 4 and ("?" in text or _is_unresolved(text))

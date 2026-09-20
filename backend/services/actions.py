@@ -88,22 +88,14 @@ def _extract_person(doc) -> Optional[str]:
 
     Returns the person string or None if no person can be determined.
     """
-    # Strategy 1 — dependency subject of the root verb
-    root_token = next((tok for tok in doc if tok.dep_ == "ROOT"), None)
-    if root_token:
-        for child in root_token.children:
-            if child.dep_ in {"nsubj", "nsubjpass", "csubj"}:
-                # Expand compound names: "John Smith" not just "John"
-                person_text = _expand_noun_phrase(child)
-                # Only keep proper nouns / PERSON entities (skip "I", "we", etc.)
-                if len(person_text) > 1 and person_text.lower() not in _VAGUE_SUBJECTS:
-                    return person_text
-
-    # Strategy 2 — first PERSON entity in the sentence
-    for ent in doc.ents:
-        if ent.label_ == "PERSON":
-            return ent.text.strip()
-
+    for tok in doc:
+        # Ownership belongs to the task predicate, not an enclosing reporting verb.
+        predicate = tok.head
+        commitment = any(c.lower_ in {"will", "shall", "must", "'ll"} for c in predicate.children) or predicate.lemma_ in {"need", "have"}
+        if tok.dep_ == "nsubj" and commitment and (tok.pos_ == "PROPN" or tok.ent_type_ == "PERSON"):
+            return _expand_noun_phrase(tok)
+        if tok.dep_ == "pobj" and tok.head.dep_ == "agent" and tok.pos_ == "PROPN":
+            return _expand_noun_phrase(tok)
     return None
 
 
@@ -140,17 +132,16 @@ def _extract_deadline(sentence: str, doc) -> Optional[str]:
 
     Returns the matched deadline string or None.
     """
-    # Strategy 1 — regex deadline phrase
-    match = _DEADLINE_RE.search(sentence)
-    if match:
-        return match.group(0).strip()
-
-    # Strategy 2 — spaCy DATE entity
     for ent in doc.ents:
-        if ent.label_ == "DATE":
+        if ent.label_ not in {"DATE", "TIME"}:
+            continue
+        prefix = sentence[max(0, ent.start_char - 24):ent.start_char]
+        if re.search(r"\b(by|before|due|on|no later than)\s*$", prefix, re.I):
             return ent.text.strip()
-
-    return None
+        if re.fullmatch(r"tomorrow|tonight|next .+", ent.text, re.I):
+            return ent.text.strip()
+    match = re.search(r"\b(?:by|before|due)\s+(?:EOD|COB|end of (?:the )?(?:day|week|month))\b", sentence, re.I)
+    return match.group(0) if match else None
 
 
 def _extract_task(sentence: str, doc) -> str:
@@ -161,34 +152,8 @@ def _extract_task(sentence: str, doc) -> str:
     sentence and strip common action-item lead-ins such as modal constructions.
     Falls back to the full sentence if no simplification is possible.
     """
-    text = sentence.strip()
-
-    # Remove leading filler patterns like "Action item:", "TODO:", etc.
-    text = re.sub(
-        r"^(?:action\s+item\s*:?|todo\s*:?|task\s*:?)\s*",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    # Try to strip the subject + modal/auxiliary prefix
-    # e.g.  "John will prepare the slides" → "prepare the slides"
-    root = next((tok for tok in doc if tok.dep_ == "ROOT"), None)
-    if root:
-        # Find where the actual verb phrase begins (skip subject + auxiliary)
-        verb_idx = root.i
-        # Walk back to find any auxiliary (will, should, must, needs) before the root
-        for child in root.children:
-            if child.dep_ in {"aux", "auxpass"} and child.i < verb_idx:
-                verb_idx = child.i
-
-        # Reconstruct from the verb onward (still within the sentence)
-        task_tokens = [tok.text for tok in doc if tok.i >= verb_idx]
-        task_text = " ".join(task_tokens).strip()
-        if task_text and len(task_text.split()) >= 2:
-            return task_text
-
-    return text
+    # Preserve negation, objects and conditions rather than slicing at ROOT.
+    return sentence.strip()
 
 
 def _detect_status(sentence: str) -> str:
@@ -196,11 +161,31 @@ def _detect_status(sentence: str) -> str:
     Check for explicit status signals in the sentence.
     Returns "Completed", "In Progress", "Blocked", or (default) "Pending".
     """
-    lower = sentence.lower()
-    for pattern, status in _STATUS_MAP.items():
-        if re.search(pattern, lower):
-            return status
+    # A future task mentioning "completed" is not already completed.
     return "Pending"
+
+
+def is_action(sentence: str) -> bool:
+    """Conservative commitment/request gate for classifier candidates."""
+    text = sentence.replace("?", "'")
+    if re.search(r"\b(if|unless|might|maybe|perhaps|would|should|could|not|never|won't|can't|cannot)\b|n't\b", text, re.I):
+        return False
+    verbs = r"(?:send|prepare|review|deliver|update|finish|complete|handle|write|create|fix|test|deploy|schedule|share|investigate|follow up|contact|check|publish|draft|submit|arrange|implement|provide)"
+    if "?" in text and not re.search(r"\b(?:can you|please)\s+", text, re.I):
+        return False
+    matched = bool(re.search(r"\b(?:will|shall|must|need(?:s)? to|have to|has to|going to)\s+" + verbs + r"\b|\b(?:I|we|he|she|they)'ll\s+" + verbs + r"\b|\bplease\s+" + verbs + r"\b|^\s*(?:action item|todo|task)\s*:", text, re.I))
+    request = bool(re.search(r"\b(?:can you|please)\s+(?:please\s+)?" + verbs + r"\b", text, re.I))
+    if request or re.match(r"\s*(?:action item|todo|task)\s*:", text, re.I):
+        return True
+    if not matched:
+        return False
+    doc = _get_nlp()(text)
+    # Distinguish a commitment from forecasts such as "the review will finish".
+    for token in doc:
+        if token.dep_ == "nsubj" and token.head.pos_ == "VERB":
+            if token.pos_ == "PROPN" or token.lower_ in {"i", "we", "you", "he", "she", "they", "team", "engineering", "qa"}:
+                return True
+    return False
 
 
 def _parse_action_sentence(sentence: str) -> dict:
@@ -212,6 +197,11 @@ def _parse_action_sentence(sentence: str) -> dict:
     doc = nlp(sentence)
 
     person = _extract_person(doc)
+    if person is None:
+        # Explicit addressee in a request, not an arbitrary PERSON mention.
+        match = re.match(r"^([A-Z][a-z]+(?: [A-Z][a-z]+)?),\s*(?:can you|please)\b", sentence)
+        if match:
+            person = match.group(1)
     deadline = _extract_deadline(sentence, doc)
     task = _extract_task(sentence, doc)
     status = _detect_status(sentence)
@@ -254,7 +244,7 @@ def extract_actions(action_sentences: list[str], doc=None) -> list[dict]:
     results = []
     for sentence in action_sentences:
         sentence = sentence.strip()
-        if not sentence:
+        if not sentence or not is_action(sentence) or any(r["original"].casefold() == sentence.casefold() for r in results):
             continue
         try:
             action = _parse_action_sentence(sentence)

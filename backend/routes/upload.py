@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 
 from backend.services.audio import extract_audio
 from backend.services.transcription import transcribe
+from backend.services.meeting_store import load_meeting, save_local, list_local_meetings
 
 logger = logging.getLogger("meeting_analyzer.upload")
 
@@ -191,6 +192,12 @@ async def upload_file(file: UploadFile = File(...)):
         except Exception as exc:
             logger.warning("Supabase insert failed (continuing without DB): %s", exc)
 
+    try:
+        save_local(file_id, "transcript.json", {**transcript, "file_id": file_id,
+                   "filename": original_filename, "uploaded_at": upload_ts})
+    except OSError as exc:
+        logger.warning("Local transcript save failed: %s", exc)
+
     # 6. Return — shape matches what TranscriptPreview.jsx expects ───────────────
     return JSONResponse(
         status_code=200,
@@ -229,7 +236,7 @@ async def list_meetings():
         except Exception as exc:
             logger.warning("DB list failed: %s", exc)
 
-    return JSONResponse(content={"meetings": [], "warning": "Database unavailable"})
+    return JSONResponse(content={"meetings": list_local_meetings(), "warning": "Database unavailable; showing locally cached recordings"})
 
 
 # ── GET /api/upload/{file_id} ─────────────────────────────────────────────────
@@ -243,6 +250,9 @@ async def get_transcript(file_id: str):
       transcript_segments.*  → response.segments
     Falls back to local disk re-transcription if DB is unavailable.
     """
+    cached = load_meeting(file_id, _get_db())
+    if cached:
+        return JSONResponse(content=cached)
     db = _get_db()
     if db:
         try:
@@ -290,6 +300,7 @@ async def get_transcript(file_id: str):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Could not read transcript: {exc}")
 
+    save_local(file_id, "transcript.json", {**transcript, "file_id": file_id})
     return JSONResponse(
         content={
             "file_id":   file_id,
