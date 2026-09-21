@@ -1,0 +1,49 @@
+﻿{
+  "language": "en",
+  "duration": 47,
+  "segments": [
+    {
+      "start": 0,
+      "end": 7,
+      "speaker": "Sarah",
+      "text": "We've received several complaints about navigation."
+    },
+    {
+      "start": 7,
+      "end": 14,
+      "speaker": "John",
+      "text": "I think simplifying the sidebar would help."
+    },
+    {
+      "start": 14,
+      "end": 22,
+      "speaker": "Sarah",
+      "text": "Agreed. Let's prioritize the navigation redesign for the next sprint."
+    },
+    {
+      "start": 22,
+      "end": 29,
+      "speaker": "Sarah",
+      "text": "John, can you prepare the new wireframes by Friday?"
+    },
+    {
+      "start": 29,
+      "end": 34,
+      "speaker": "John",
+      "text": "Yes, I'll have them ready."
+    },
+    {
+      "start": 34,
+      "end": 40,
+      "speaker": "Alex",
+      "text": "Are we keeping the current authentication system?"
+    },
+    {
+      "start": 40,
+      "end": 47,
+      "speaker": "Sarah",
+      "text": "We haven't decided that yet. Let's discuss it with the backend team."
+    }
+  ],
+  "full_text": "We've received several complaints about navigation. I think simplifying the sidebar would help. Agreed. Let's prioritize the navigation redesign for the next sprint. John, can you prepare the new wireframes by Friday? Yes, I'll have them ready. Are we keeping the current authentication system? We haven't decided that yet. Let's discuss it with the backend team."
+}

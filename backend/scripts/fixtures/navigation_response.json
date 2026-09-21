@@ -1,0 +1,195 @@
+{
+  "version": 2,
+  "summary": [
+    "The team noted multiple user complaints about the navigation.",
+    "A proposal to simplify the sidebar was raised.",
+    "The group agreed to prioritize a navigation redesign in the next sprint.",
+    "John was tasked with delivering new wireframes by Friday, and the authentication system decision was deferred for discussion with the backend team."
+  ],
+  "summary_evidence": [
+    {
+      "evidence": "We've received several complaints about navigation.",
+      "timestamp": 0.0,
+      "segment_ids": [
+        0
+      ],
+      "speaker": "Sarah"
+    },
+    {
+      "evidence": "I think simplifying the sidebar would help.",
+      "timestamp": 7.0,
+      "segment_ids": [
+        1
+      ],
+      "speaker": "John"
+    },
+    {
+      "evidence": "Agreed. Let's prioritize the navigation redesign for the next sprint.",
+      "timestamp": 14.0,
+      "segment_ids": [
+        2
+      ],
+      "speaker": "Sarah"
+    },
+    {
+      "evidence": "John, can you prepare the new wireframes by Friday? Yes, I'll have them ready. Are we keeping the current authentication system? We haven't decided that yet. Let's discuss it with the backend team.",
+      "timestamp": 22.0,
+      "segment_ids": [
+        3,
+        4,
+        5,
+        6
+      ],
+      "speaker": null
+    }
+  ],
+  "key_takeaway": "Prioritize navigation redesign in the next sprint.",
+  "takeaway_evidence": {
+    "evidence": "Agreed. Let's prioritize the navigation redesign for the next sprint.",
+    "timestamp": 14.0,
+    "segment_ids": [
+      2
+    ],
+    "speaker": "Sarah"
+  },
+  "action_items": [
+    {
+      "evidence": "John, can you prepare the new wireframes by Friday?",
+      "timestamp": 22.0,
+      "segment_ids": [
+        3
+      ],
+      "speaker": "Sarah",
+      "task": "Prepare new wireframes",
+      "owner": "John",
+      "deadline": "Friday",
+      "priority": null,
+      "status": "Pending",
+      "owner_evidence": "John, can you prepare the new wireframes by Friday?",
+      "deadline_evidence": "John, can you prepare the new wireframes by Friday?",
+      "priority_evidence": null
+    },
+    {
+      "evidence": "We haven't decided that yet. Let's discuss it with the backend team.",
+      "timestamp": 40.0,
+      "segment_ids": [
+        6
+      ],
+      "speaker": "Sarah",
+      "task": "Discuss authentication system with backend team",
+      "owner": null,
+      "deadline": null,
+      "priority": null,
+      "status": "Pending",
+      "owner_evidence": null,
+      "deadline_evidence": null,
+      "priority_evidence": null
+    }
+  ],
+  "decisions": [
+    {
+      "evidence": "Agreed. Let's prioritize the navigation redesign for the next sprint.",
+      "timestamp": 14.0,
+      "segment_ids": [
+        2
+      ],
+      "speaker": "Sarah",
+      "decision": "Prioritize navigation redesign for the next sprint"
+    }
+  ],
+  "questions": [
+    {
+      "evidence": "Are we keeping the current authentication system?",
+      "timestamp": 34.0,
+      "segment_ids": [
+        5
+      ],
+      "speaker": "Alex",
+      "question": "Are we keeping the current authentication system?",
+      "status": "Unresolved",
+      "answer": null,
+      "answer_evidence": null
+    }
+  ],
+  "topics": [
+    {
+      "evidence": "We've received several complaints about navigation.",
+      "timestamp": 0.0,
+      "segment_ids": [
+        0
+      ],
+      "speaker": "Sarah",
+      "label": "Navigation complaints",
+      "keywords": [
+        "navigation",
+        "complaints"
+      ],
+      "relevance": null
+    },
+    {
+      "evidence": "I think simplifying the sidebar would help.",
+      "timestamp": 7.0,
+      "segment_ids": [
+        1
+      ],
+      "speaker": "John",
+      "label": "Sidebar simplification proposal",
+      "keywords": [
+        "sidebar",
+        "simplify",
+        "simplifying"
+      ],
+      "relevance": null
+    },
+    {
+      "evidence": "Agreed. Let's prioritize the navigation redesign for the next sprint.",
+      "timestamp": 14.0,
+      "segment_ids": [
+        2
+      ],
+      "speaker": "Sarah",
+      "label": "Navigation redesign prioritization",
+      "keywords": [
+        "navigation redesign",
+        "next sprint",
+        "prioritize"
+      ],
+      "relevance": null
+    },
+    {
+      "evidence": "Are we keeping the current authentication system? We haven't decided that yet. Let's discuss it with the backend team.",
+      "timestamp": 34.0,
+      "segment_ids": [
+        5,
+        6
+      ],
+      "speaker": null,
+      "label": "Authentication system decision",
+      "keywords": [
+        "authentication system",
+        "backend team",
+        "discuss"
+      ],
+      "relevance": null
+    }
+  ],
+  "entities": {
+    "people": [
+      "Sarah",
+      "John",
+      "Alex"
+    ],
+    "organizations": [],
+    "dates": [
+      "Friday"
+    ],
+    "locations": [],
+    "products": []
+  },
+  "metadata": {
+    "language": "en",
+    "duration": 47.0,
+    "speaker_count": 3
+  },
+  "limitations": []
+}

@@ -74,8 +74,15 @@ class IntelligenceTests(unittest.TestCase):
         self.assertIsNone(result["timestamp"])
 
     def test_contract_and_explicit_answer(self):
+        from backend.scripts.test_semantic import response
+        from backend.services.semantic import GroqAnalyzer
         text = "Who will own the redesign? The answer is Sarah."
-        result = run_nlp_pipeline(text)
+        raw = response(text)
+        raw["questions"] = [{"question": "Who will own the redesign?", "evidence": "Who will own the redesign?",
+                            "status": "Resolved", "answer": "The answer is Sarah.",
+                            "answer_evidence": {"evidence": "The answer is Sarah."}}]
+        with patch.object(GroqAnalyzer, "request", return_value=raw):
+            result = run_nlp_pipeline(text)
         report = build_intelligence(result, text)
         Intelligence.model_validate(report)
         self.assertEqual(report["questions"][0]["status"], "Resolved")
@@ -84,12 +91,16 @@ class IntelligenceTests(unittest.TestCase):
         self.assertEqual(report["decisions"], [])
 
     def test_non_english_preserves_original(self):
+        from backend.scripts.test_semantic import response
+        from backend.services.semantic import GroqAnalyzer
         text = "La reunion porte sur le budget."
-        result = run_nlp_pipeline(text, language="fr")
+        with patch.object(GroqAnalyzer, "request", return_value=response(text)) as model:
+            result = run_nlp_pipeline(text, language="fr")
         report = build_intelligence(result, text, language="fr")
         self.assertEqual(report["summary"], [text])
         self.assertEqual(report["action_items"], [])
-        self.assertTrue(report["limitations"])
+        self.assertEqual(report["metadata"]["language"], "fr")
+        model.assert_called_once()
 
     def test_local_refresh_and_path_validation(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", {"DATA_DIR": directory}):

@@ -152,6 +152,14 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
             highlights.append("Key takeaway: " + intelligence["key_takeaway"])
         summary_ext = " ".join(highlights)
 
+    if isinstance(intelligence, dict):
+        topics = {"discussion": intelligence.get("topics", [])}
+        labels = {"people": "PERSON", "organizations": "ORG", "dates": "DATE",
+                  "locations": "LOCATION", "products": "TECHNOLOGY"}
+        entities = [{"text": text, "label": labels[group]}
+                    for group, values in intelligence.get("entities", {}).items()
+                    if group in labels for text in values]
+
     summary = summary_ext or "No transcript excerpt summary available. Re-analyse this meeting."
 
     # ── Style setup ───────────────────────────────────────────────────────────

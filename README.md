@@ -1,8 +1,8 @@
 # Meeting Analyzer — AI-Based NLP System for Automated Meeting Analysis
 
 An end-to-end NLP pipeline that takes a recorded meeting (audio or video),
-transcribes it, extracts entities, classifies sentences, identifies action items
-and decisions, and generates both extractive and abstractive summaries —
+transcribes it, extracts grounded actions, decisions, questions and entities,
+and generates a semantic meeting summary —
 presented in an interactive React dashboard.
 
 ---
@@ -20,7 +20,8 @@ presented in an interactive React dashboard.
 | NLP | spaCy, NLTK |
 | ML (classification) | Scikit-learn |
 | Transformers | Hugging Face Transformers |
-| Summarization | BART / T5 / FLAN-T5 |
+| Meeting intelligence | Groq structured semantic extraction |
+| Academic baselines | spaCy, TF-IDF/LDA, BART / T5 |
 | Database | Firebase or Supabase |
 | PDF export | ReportLab |
 
@@ -145,51 +146,110 @@ representative, annotated team recordings before treating reports as authoritati
 the regression suite is not a measured production accuracy benchmark.
 
 
-## Meeting intelligence dashboard (v2)
+## Meeting intelligence
 
-The results route `/dashboard/:fileId` now offers Overview, Transcript, and Analytics.
-Overview contains source-backed summary bullets, an explicit outcome when present,
-actions, decisions, follow-up questions, phrase-based topics, and validated entities.
-Transcript search, category filters, and evidence links use original Whisper segments.
-Analytics contains composition, topic relevance, entity counts, and recording statistics.
-Speaker filtering/talk-time appears only for segments that actually have speaker labels;
-the current Whisper pipeline does not perform diarization. Mentioned people are never
-counted as participants. Uploaded date is not presented as the date of the meeting.
+The existing Overview / Transcript / Analytics dashboard uses one canonical
+Pydantic contract in `backend/services/intelligence.py`. It contains a concise
+summary, key takeaway, actions, decisions, resolved/unresolved questions, semantic
+topics, entities, and deterministic meeting metadata. Evidence remains in the
+original transcript language. Missing owners, deadlines, and priorities are null.
 
-The analysis API retains its existing fields and adds a Pydantic-validated `intelligence`
-object (version 2). For database compatibility, this object is stored inside the existing
-`topics` JSONB column as `topics.intelligence`; no SQL migration is required. Existing
-reports need **Re-analyse**. Exact, unambiguous source matches provide `segment_ids` and
-a timestamp at the first segment boundary, not word-level audio alignment. When mapping
-is unavailable, evidence is readable without a misleading navigation button.
+### Groq configuration
 
-Unknown owner, deadline, and priority remain null. Question resolution is `Not assessed`
-unless explicitly marked open or followed by an explicit answer. This avoids claiming
-that every question is unanswered. TF-IDF + classifier + spaCy and LDA/NMF are retained;
-raw topic clusters are no longer shown as user-facing discussion topics. Topic labels
-are actual noun phrases, not generated titles. No paid service has been added.
+Set `GROQ_API_KEY` (or `MEETING_LLM_API_KEY`) in the root `.env`; restart the
+backend after changing it. Keys stay on the backend and must never use a `VITE_`
+prefix. No additional SDK dependency is needed.
 
-Multilingual transcription and original text are preserved. English-only semantic models
-are not run on recordings detected as other languages: those reports expose original
-excerpts plus a clear capability notice. Multilingual semantic analysis and diarization
-require suitable models and remain future extensions, not simulated capabilities.
+Defaults, also shown in `.env.example`:
 
-Recovery copies (`transcript.json`, `analysis.json`) stay in each recording's existing
-local data directory so a Supabase outage does not discard a freshly processed report.
-They contain meeting content and should follow the same retention policy as recordings.
-Supabase remains the primary shared database; local copies only cover that server.
+```dotenv
+MEETING_LLM_BASE_URL=https://api.groq.com/openai/v1
+MEETING_LLM_MODEL=openai/gpt-oss-120b
+MEETING_LLM_RESPONSE_FORMAT=json_schema
+MEETING_LLM_CONTEXT_TOKENS=32768
+MEETING_LLM_MAX_OUTPUT_TOKENS=8192
+MEETING_LLM_TIMEOUT_SECONDS=120
+```
 
-Validation commands:
+The default Groq model supports strict schema output. For a different compatible
+model that only supports JSON mode, explicitly set the response format to
+`json_object`. Context/output settings must stay within that model's limits.
+Provider reference: https://console.groq.com/docs/structured-outputs
+
+### Extraction and persistence
+
+Upload -> FFmpeg -> Faster-Whisper -> original transcript/segments -> one structured
+Groq extraction -> field-level validation and evidence mapping -> canonical report
+-> saved API response -> dashboard/PDF.
+
+Long transcripts use byte-bounded chunks with adjacent-turn overlap, local
+extraction, then compact global synthesis. Exceptionally large intermediate sets
+reduce in additional bounded tiers. Nothing is silently truncated; an oversized
+or incomplete response produces a failure. No separate summary/actions/topics
+model calls are made. Legacy academic services remain available for their
+standalone tests, but cannot overwrite the semantic meeting report.
+
+Paraphrases are allowed; supporting quotes must match the original transcript.
+Unambiguous matching segments provide source navigation at the first segment's
+timestamp, not word-level audio alignment. Repeated or stale segment matches
+remain untimed. Stored speaker labels are preserved; the current Whisper service
+does not perform diarization, so it cannot identify speakers from unlabeled audio.
+Multilingual extraction runs on the original text; there is no forced English
+translation or English-only extraction gate.
+
+The API preserves its existing boundary fields for clients/database compatibility.
+Those fields are derived from `intelligence`, not independently extracted.
+Supabase stores the canonical object in the existing `topics.intelligence` JSONB
+field, so no SQL migration is required. Local recovery copies contain the same
+canonical data. Re-analyze old reports to use semantic extraction.
+
+`analysis_state` distinguishes `complete`, `partial`, and `empty`. Field-level
+recovery is reported as partial, with technical `analysis_issues` for diagnostics.
+Provider/parsing failure returns HTTP 502 and saves a failed attempt separately,
+preserving any earlier successful report. The dashboard exposes Retry analysis.
+Groq rate limits/transient errors receive at most two bounded retries; technical
+errors are logged without logging credentials or raw transcript response bodies.
+
+### Validation
+
+Offline regression tests use explicit model/audio test doubles, never application
+demo data:
 
 ```powershell
-python -m unittest backend.scripts.test_report_accuracy backend.scripts.test_intelligence -v
+python -m unittest backend.scripts.test_report_accuracy backend.scripts.test_intelligence backend.scripts.test_semantic -v
 cd frontend
 npm run build
 npm run lint
 node --test src/components/meeting/data.test.js
 ```
 
-Optional browser validation uses Playwright with installed Edge and existing processed
-data, not application demo fixtures. With API on port 8011 and Vite on port 5174:
-`python -m backend.scripts.check_dashboard_browser`. Override `TEST_API_URL`, `TEST_UI_URL`,
-and `TEST_MEETING_ID` for your environment. Playwright is a development-only test tool.
+Opt-in live tests require the configured Groq key:
+
+```powershell
+python -m backend.scripts.validate_semantic_live
+python -m backend.scripts.validate_long_semantic
+```
+
+The first script validates the controlled navigation meeting, semantic edge cases,
+Spanish extraction, API persistence, PDF, and (when the existing sample recording
+is present) a real 60-second FFmpeg/Whisper upload flow. Use `--resume` to resume
+completed case results after a rate-limit interruption. Outputs and isolated
+recordings are saved under `data/validation/`; they are not served as demo content.
+
+Browser validation uses installed Edge/Playwright with a running API/UI:
+`python -m backend.scripts.check_dashboard_browser`. Configure `TEST_API_URL`,
+`TEST_UI_URL`, `TEST_MEETING_ID`, and `TEST_SEARCH` for a saved meeting containing
+decisions and evidence links. Browser checks cover the real API, evidence
+navigation, search/filtering, refresh, PDF download, mobile overflow, malformed
+responses, and retry. Playwright is a development-only test tool.
+
+Provider throughput limits are separate from the model context window. The
+MEETING_LLM_MAX_INPUT_BYTES setting defaults to 8192 and bounds each extraction
+payload. Compact synthesis has a separate MEETING_LLM_SYNTHESIS_BYTES ceiling
+(default 12288). Lower these if Groq returns HTTP 413 for your account token
+limit; increasing context size does not fix that limit. Compact synthesis uses
+source-span endpoints to preserve evidence without repeating every segment ID.
+GPT-OSS requests default to low reasoning effort to reduce output-token usage;
+MEETING_LLM_REASONING_EFFORT can override this with low, medium or high. This
+option is sent only for the supported GPT-OSS models. Provider references:
+https://console.groq.com/docs/rate-limits and https://console.groq.com/docs/reasoning.

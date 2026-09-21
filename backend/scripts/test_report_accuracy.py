@@ -56,7 +56,14 @@ class ReportAccuracyTests(unittest.TestCase):
 
     def test_pipeline_and_pdf(self):
         text = "Alice will send the budget by Friday. We have not approved the launch. We decided not to deploy on Monday. When will we launch?"
-        with patch.dict(os.environ, {"ENABLE_ABSTRACTIVE_SUMMARY": "false"}):
+        from backend.scripts.test_semantic import response
+        from backend.services.semantic import GroqAnalyzer
+        raw = response(text)
+        raw["action_items"] = [{"task": "Send the budget", "owner": "Alice", "deadline": "Friday",
+                               "evidence": "Alice will send the budget by Friday."}]
+        raw["decisions"] = [{"decision": "Do not deploy on Monday.",
+                             "evidence": "We decided not to deploy on Monday."}]
+        with patch.object(GroqAnalyzer, "request", return_value=raw):
             result = run_nlp_pipeline(text)
         self.assertEqual(len(result["action_items"]), 1)
         self.assertEqual(len(result["decisions"]), 1)
@@ -92,8 +99,9 @@ class ReportAccuracyTests(unittest.TestCase):
         self.assertTrue(result["extractive"])
 
     def test_empty_transcript(self):
-        with self.assertRaises(RuntimeError):
-            run_nlp_pipeline(" ")
+        result = run_nlp_pipeline(" ")
+        self.assertEqual(result["analysis_state"], "empty")
+        self.assertEqual(result["intelligence"]["summary"], [])
 
 
 if __name__ == "__main__":

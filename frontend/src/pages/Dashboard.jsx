@@ -49,11 +49,13 @@ function MeetingDashboard({fileId}) {
   const data = analysis || normalizeAnalysis(null)
   return <div className="mi-dashboard"><Link className="mi-back" to="/history">&#8592; Meeting history</Link>
     <MeetingHeader meeting={meeting} busy={busy} exporting={exporting} hasAnalysis={!!analysis} onAnalyze={runAnalysis} onExport={download}/>
-    {error && <div role="alert" className="mi-notice mi-error">{error} <button onClick={retry}>Retry loading</button></div>}
+    {error && <div role="alert" className="mi-notice mi-error">{error} <button onClick={retry}>Retry loading</button> <button disabled={busy} onClick={runAnalysis}>Retry analysis</button></div>}
     {transcriptError && <div role="alert" className="mi-notice">Transcript unavailable: {transcriptError} <button onClick={retry}>Retry</button></div>}
     {busy && <div role="status" className="mi-notice">Analysing the transcript. Your existing report remains available while this runs.</div>}
     {loading ? <div role="status" className="mi-loading"><span className="mi-eyebrow">Preparing your meeting</span><div/><div/><div/></div> : <>
-      {analysis && data.intelligence.version !== 2 && <div className="mi-notice">This meeting uses an older report format. Re-analyse it to generate validated insights and transcript evidence.</div>}
+      {analysis && (data.intelligence.version !== 2 || data.analysis_state === 'legacy') && <div className="mi-notice">This meeting uses an older report format. Re-analyse it to generate validated insights and transcript evidence.</div>}
+      {data.analysis_attempt?.state === 'failed' && <div role="alert" className="mi-notice mi-error">The latest analysis failed. The previous report is shown below. <button disabled={busy} onClick={runAnalysis}>Retry analysis</button></div>}
+      {data.analysis_state === 'partial' && <div role="status" className="mi-notice">Some sections could not be generated. Available results are shown below. <button disabled={busy} onClick={runAnalysis}>Retry analysis</button></div>}
       {data.intelligence.limitations.map((message, index) => <div className="mi-notice" key={index}>{message}</div>)}
       <div className="mi-tabs" role="tablist" aria-label="Meeting views">{['overview', 'transcript', 'analytics'].map((value, index, tabs) => <button role="tab" id={`tab-${value}`} aria-controls={`panel-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} key={value} onClick={() => activate(value)} onKeyDown={e => {
         let next

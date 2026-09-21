@@ -12,11 +12,10 @@ export function Evidence({item, onJump, segments}) {
     {ids.length > 0 && <button className="mi-link" onClick={() => onJump(ids[0])}>View transcript{typeof item.timestamp === 'number' ? ` at ${timestamp(item.timestamp)}` : ''} <span aria-hidden="true">&#8599;</span></button>}
   </details>
 }
-export function MeetingSummary({intelligence, draft}) {
+export function MeetingSummary({intelligence}) {
   return <Panel title="AI Meeting Summary" className="mi-summary" subtitle="Source-backed highlights from your meeting">
-    {intelligence.summary.length ? <ul className="mi-summary-list">{intelligence.summary.map((line, index) => <li key={index} dir="auto">{line}</li>)}</ul> : <Empty>No reliable summary is available yet.</Empty>}
-    <div className="mi-takeaway"><span className="mi-eyebrow">Key takeaway</span><p dir="auto">{intelligence.key_takeaway || 'No explicit overall outcome was identified.'}</p></div>
-    {text(draft) && <details className="mi-evidence"><summary>Optional generated draft ? review required</summary><p dir="auto">{draft}</p></details>}
+    {intelligence.summary.length ? <ul className="mi-summary-list">{intelligence.summary.map((line, index) => <li key={index} dir="auto">{line}</li>)}</ul> : <Empty>There is not enough meaningful transcript content to summarize.</Empty>}
+    <div className="mi-takeaway"><span className="mi-eyebrow">Key takeaway</span><p dir="auto">{intelligence.key_takeaway || 'No dominant overall outcome was identified.'}</p></div>
   </Panel>
 }
 export function ActionItems({items, ...evidenceProps}) {
@@ -31,7 +30,7 @@ export function Decisions({items, ...evidenceProps}) {
   return <Panel title="Decisions made" count={items.length} className="mi-decisions">{!items.length ? <Empty>No explicit decisions were identified in this meeting.</Empty> : items.map((item, index) => <article className="mi-insight" key={index}><p dir="auto">{text(item.decision)}</p><Evidence item={item} {...evidenceProps}/></article>)}</Panel>
 }
 export function OpenQuestions({items, ...evidenceProps}) {
-  return <Panel title="Open questions & follow-ups" count={items.length} className="mi-questions" subtitle="Only explicit answers or open markers establish resolution; other questions need review.">
+  return <Panel title="Open questions & follow-ups" count={items.length} className="mi-questions">
     {!items.length ? <Empty>No important questions were identified.</Empty> : items.map((item, index) => <article className="mi-insight" key={index}><span className={`mi-pill ${item.status === 'Resolved' ? 'mi-resolved' : ''}`}>{text(item.status) || 'Not assessed'}</span><p dir="auto">{text(item.question)}</p>{text(item.answer) && <p className="mi-answer">Answer: {item.answer}</p>}<Evidence item={item} {...evidenceProps}/>{item.answer_evidence && <Evidence item={item.answer_evidence} {...evidenceProps}/>}</article>)}
   </Panel>
 }
@@ -45,7 +44,7 @@ export function EntityPanel({entities}) {
 }
 export default function Overview({analysis, segments, onJump}) {
   const i = analysis.intelligence, evidenceProps = {segments, onJump}
-  return <div className="mi-overview"><MeetingSummary intelligence={i} draft={analysis.summary.abstractive}/>
+  return <div className="mi-overview"><MeetingSummary intelligence={i}/>
     <ActionItems items={i.action_items} {...evidenceProps}/><div className="mi-grid"><Decisions items={i.decisions} {...evidenceProps}/><OpenQuestions items={i.questions} {...evidenceProps}/></div>
     <div className="mi-grid"><DiscussionTopics items={i.topics} {...evidenceProps}/><EntityPanel entities={i.entities}/></div></div>
 }

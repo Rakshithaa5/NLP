@@ -30,3 +30,17 @@ test('speaker turns combine adjacent blocks and include unlabeled time in denomi
 test('no speaker labels means no invented participants', () => {
   assert.deepEqual(speakerStats(normalizeMeeting({segments: [{text: 'Sarah is mentioned.'}]}).segments).rows, [])
 })
+
+test('analysis failure and partial states survive normalization', () => {
+  const partial = normalizeAnalysis({analysis_state: 'partial', intelligence: {summary: ['Available']}})
+  assert.equal(partial.analysis_state, 'partial')
+  assert.deepEqual(partial.intelligence.summary, ['Available'])
+  const prior = normalizeAnalysis({analysis_attempt: {state: 'failed'}, intelligence: {summary: ['Previous']}})
+  assert.equal(prior.analysis_attempt.state, 'failed')
+  assert.deepEqual(prior.intelligence.summary, ['Previous'])
+})
+test('database compatibility envelope preserves canonical insights', () => {
+  const a = normalizeAnalysis({topics: {intelligence: {summary: ['Saved summary'], key_takeaway: null}}})
+  assert.deepEqual(a.intelligence.summary, ['Saved summary'])
+  assert.equal(a.intelligence.key_takeaway, '')
+})

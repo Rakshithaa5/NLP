@@ -22,7 +22,7 @@ export function normalizeMeeting(value) {
     })}
 }
 export function normalizeAnalysis(value) {
-  const a = object(value), i = object(a.intelligence)
+  const a = object(value), i = object(a.intelligence || object(a.topics).intelligence)
   const rows = key => list(i[key]).map(object).filter(row => Object.keys(row).length)
   return {...a, intelligence: {...i, summary: list(i.summary).filter(s => typeof s === 'string'),
     key_takeaway: text(i.key_takeaway), limitations: list(i.limitations).filter(s => typeof s === 'string'),

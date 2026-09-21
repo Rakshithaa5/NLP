@@ -43,7 +43,7 @@ def load_meeting(file_id, db=None):
                 segments = (local or {}).get("segments", [])
                 try:
                     rows = db.table("transcript_segments").select("start_sec,end_sec,text").eq("meeting_id", file_id).order("start_sec").execute().data or []
-                    if rows:
+                    if rows and not segments:
                         segments = [{"start": s["start_sec"], "end": s["end_sec"], "text": s["text"]} for s in rows]
                 except Exception:
                     logger.warning("Segment lookup unavailable; retaining cached segments.")

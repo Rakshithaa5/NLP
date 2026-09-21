@@ -19,9 +19,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from backend.routes import upload, analysis, report
-
 load_dotenv()
+
+from backend.routes import upload, analysis, report
 
 app = FastAPI(
     title="Meeting Analyzer API",
