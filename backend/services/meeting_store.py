@@ -1,5 +1,6 @@
 """Local recovery copies for the existing Supabase-backed meeting workflow."""
 import json
+from contextlib import contextmanager
 import logging
 import os
 from pathlib import Path
@@ -69,9 +70,6 @@ def list_local_meetings():
 
 class AnalysisInProgress(RuntimeError):
     pass
-
-
-from contextlib import contextmanager
 
 
 @contextmanager

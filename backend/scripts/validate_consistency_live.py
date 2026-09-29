@@ -23,7 +23,7 @@ def run():
     logging.getLogger().handlers = [handler]
     fixture = meeting()
     file_id = "00000000-0000-0000-0000-000000000005"
-    records, identity_sets = [], []
+    records, identity_sets, candidate_sets = [], [], []
     with patch.dict(os.environ, {"DATA_DIR": str(output / "store")}), patch.object(analysis, "_get_db", return_value=None):
         save_local(file_id, "transcript.json", fixture)
         # A separate store per invocation avoids using a prior validation result as run 1.
@@ -47,6 +47,7 @@ def run():
                 candidate = read_local(file_id, "analysis_candidate.json")["intelligence"]
                 ids = {key: {r["id"] for r in report[key]} for key in FIELDS}
                 identity_sets.append(ids)
+                candidate_sets.append({key: {r["id"] for r in candidate[key]} for key in FIELDS})
                 record = {"run": index + 1, "state": result["analysis_state"],
                           "counts": {key: len(report[key]) for key in FIELDS},
                           "candidate_counts": {key: len(candidate[key]) for key in FIELDS},
@@ -62,7 +63,10 @@ def run():
             overlap = {key: min(len(identity_sets[0][key] & ids[key]) / len(identity_sets[0][key] | ids[key])
                         if identity_sets[0][key] | ids[key] else 1.0 for ids in identity_sets[1:]) for key in FIELDS}
             passed = all(r["state"] == "complete" for r in records) and all(overlap[k] == 1 for k in ("action_items", "decisions", "questions", "follow_ups"))
-            summary = {"passed": passed, "runs": records, "minimum_jaccard_vs_run1": overlap}
+            raw_overlap = {key: min(len(candidate_sets[0][key] & ids[key]) / len(candidate_sets[0][key] | ids[key])
+                        if candidate_sets[0][key] | ids[key] else 1.0 for ids in candidate_sets[1:]) for key in FIELDS}
+            summary = {"passed": passed, "runs": records, "minimum_jaccard_vs_run1": overlap,
+                       "candidate_minimum_jaccard_vs_run1": raw_overlap}
             (output / "results.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
             print(json.dumps({"passed": passed, "overlap": overlap}), flush=True)
             assert passed, "Five-run semantic consistency failed; inspect raw candidates and reconciled results"

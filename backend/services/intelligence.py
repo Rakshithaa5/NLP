@@ -127,7 +127,9 @@ def _contains(value, context):
 
 def _terms(value):
     value = re.sub(r"\bdocs?\b", "documentation", norm(value).casefold())
-    return set(re.findall(r"\w+", value)) - {"the", "a", "an", "to", "should", "will"}
+    aliases = {"resolve": "fix", "repair": "fix", "bug": "issue", "create": "prepare",
+               "draft": "prepare", "complete": "finish", "verify": "check"}
+    return {aliases.get(word, word) for word in re.findall(r"\w+", value)} - {"the", "a", "an", "to", "should", "will"}
 
 
 def deduplicate(items, field):

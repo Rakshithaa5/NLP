@@ -106,6 +106,46 @@ class ConsistencyTests(unittest.TestCase):
             with analysis_lock(file_id):
                 pass
 
+    def test_followup_retained_when_new_run_omits_it(self):
+        text = "After deployment, Alice will verify the login fix."
+        raw = response(text)
+        raw["follow_ups"] = [{"task": "Verify login after deployment", "evidence": text, "owner": "Alice"}]
+        with patch.object(GroqAnalyzer, "request", return_value=raw):
+            first = analyze_transcript(text, [{"text": text}])
+        raw["follow_ups"] = []
+        with patch.object(GroqAnalyzer, "request", return_value=raw):
+            second = analyze_transcript(text, [{"text": text}])
+        result = reconcile(first, second, text, [{"text": text}], "transcript")
+        self.assertEqual(len(result["intelligence"]["follow_ups"]), 1)
+        self.assertEqual(result["intelligence"]["action_items"], [])
+        self.assertEqual(result["intelligence"]["follow_ups"][0]["reconciliation"], "retained")
+
+    def test_cannot_resolve_two_different_assignees_to_same_identity(self):
+        text = "Alice and Bob will each independently test the release."
+        raw = response(text)
+        raw["action_items"] = [{"task": "Test release", "owner": "Alice", "evidence": text}]
+        with patch.object(GroqAnalyzer, "request", return_value=raw):
+            first = analyze_transcript(text, [{"text": text}])
+        raw["action_items"][0]["owner"] = "Bob"
+        with patch.object(GroqAnalyzer, "request", return_value=raw):
+            second = analyze_transcript(text, [{"text": text}])
+        result = reconcile(first, second, text, [{"text": text}], "transcript")
+        self.assertEqual(len(result["action_items"]), 2)
+        self.assertEqual(len({r["id"] for r in result["action_items"]}), 2)
+
+    def test_distinct_tasks_same_turn_across_runs_are_not_matched(self):
+        text = "Alice will send the report and delete the backup."
+        raw = response(text)
+        raw["action_items"] = [{"task": "Send report", "owner": "Alice", "evidence": text}]
+        with patch.object(GroqAnalyzer, "request", return_value=raw):
+            first = analyze_transcript(text, [{"text": text}])
+        raw["action_items"][0]["task"] = "Delete backup"
+        with patch.object(GroqAnalyzer, "request", return_value=raw):
+            second = analyze_transcript(text, [{"text": text}])
+        result = reconcile(first, second, text, [{"text": text}], "transcript")
+        self.assertEqual(len(result["action_items"]), 2)
+        self.assertEqual(len({r["id"] for r in result["action_items"]}), 2)
+
     def test_api_cache_force_and_snapshot(self):
         from fastapi.testclient import TestClient
         from backend.main import app

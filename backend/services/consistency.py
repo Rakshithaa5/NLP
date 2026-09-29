@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import logging
-from backend.services.intelligence import deduplicate, evidence_for, norm, legacy_payload, normalize_analysis
+from backend.services.intelligence import deduplicate, evidence_for, norm, legacy_payload, normalize_analysis, _terms
 
 logger = logging.getLogger(__name__)
 ANALYSIS_VERSION = "meeting-intelligence-v3"
@@ -88,7 +88,9 @@ def _matches(a, b, field, unique):
     if field == "task" and any(a.get(k) and b.get(k) and a[k] != b[k] for k in ("owner", "deadline")):
         return False
     if left == right and unique and quotes_overlap:
-        return True
+        # Same turn may contain multiple tasks: evidence alone is not enough.
+        x, y = _terms(a[field]), _terms(b[field])
+        return bool(x and y and len(x & y) / len(x | y) >= 0.5)
     return len(deduplicate([deepcopy(a), deepcopy(b)], field)) == 1
 
 def user_edits(item):
@@ -126,6 +128,9 @@ def reconcile(previous, candidate, transcript, segments, meeting_id):
     audit = {}
     review = deepcopy(old.get("manual_review_items", []))
     for key, field in FIELDS.items():
+        if key == "topics":
+            # Topics describe the current report; accumulating broad labels creates duplicates.
+            continue
         rows = report.get(key, [])
         counts = {"stable": 0, "retained": 0, "new": len(rows), "removed": 0}
         used = set()

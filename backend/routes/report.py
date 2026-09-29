@@ -147,6 +147,10 @@ def _build_pdf(file_id: str, data: dict) -> bytes:
                      for item in intelligence.get("decisions", [])]
         questions = [{**item, "resolution_status": item.get("status", "Not assessed"), "original": item.get("evidence", "")}
                      for item in intelligence.get("questions", [])]
+        questions.extend({**item, "question": item.get("task", ""),
+                          "resolution_status": item.get("status", "Pending"),
+                          "original": item.get("evidence", "")}
+                         for item in intelligence.get("follow_ups", []))
         highlights = list(intelligence.get("summary", []))
         if intelligence.get("key_takeaway"):
             highlights.append("Key takeaway: " + intelligence["key_takeaway"])
