@@ -253,7 +253,7 @@ class SemanticTests(unittest.TestCase):
         units = transcript_units("Start. Important late decision.", [{"text": "Start.", "start": 0}])
         self.assertIn("Important late decision.", " ".join(u["text"] for u in units))
 
-    def test_chunk_pipeline_synthesizes_and_keeps_late_evidence(self):
+    def test_chunk_pipeline_merges_without_model_and_keeps_late_evidence(self):
         transcript = " ".join(f"Milestone {n} is ready for review." for n in range(70))
         calls = []
         class Analyzer:
@@ -265,8 +265,8 @@ class SemanticTests(unittest.TestCase):
                 raw = response(payload["candidates"][-1]["summary"][0])
                 return raw
         result = analyze_transcript(transcript, analyzer=Analyzer())
-        self.assertIn("Milestone 69", result["intelligence"]["summary"][0])
-        self.assertTrue(any("candidates" in c for c in calls))
+        self.assertTrue(any("Milestone 69" in point for point in result["intelligence"]["summary"]))
+        self.assertTrue(all("transcript" in c for c in calls))
         for call in calls:
             if "candidates" in call:
                 self.assertNotIn("transcript", call)
@@ -426,7 +426,7 @@ class ApiIntegrationTests(unittest.TestCase):
             self.assertEqual(pdf.status_code, 200, pdf.text[:100] if pdf.status_code != 200 else "")
             self.assertTrue(pdf.content.startswith(b"%PDF"))
             with patch.object(GroqAnalyzer, "request", side_effect=AnalysisError("offline")):
-                failed = client.post("/api/analysis/" + file_id)
+                failed = client.post("/api/analysis/" + file_id + "?force=true")
             self.assertEqual(failed.status_code, 502)
             prior = client.get("/api/analysis/" + file_id).json()
             self.assertEqual(prior["analysis_attempt"]["state"], "failed")

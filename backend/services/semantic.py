@@ -25,10 +25,10 @@ def provider_payload(payload):
     """Send source IDs and text without repeating null labels or timestamps."""
     if not isinstance(payload.get("transcript"), list):
         return payload
-    rows = [[u.get("segment_id"), u.get("speaker"), u["text"]]
+    rows = [[u.get("segment_id"), u.get("speaker"), u["text"], u.get("start")]
             for u in payload["transcript"]]
     return {**payload, "transcript": rows,
-            "transcript_columns": ["segment_id", "speaker", "text"]}
+            "transcript_columns": ["segment_id", "speaker", "text", "start"]}
 
 
 SYSTEM = """You analyze multilingual meeting transcripts, including code switching.
@@ -38,8 +38,26 @@ insights in the main meeting language, retain exact original-language evidence.
 
 CRITICAL: Extract ALL items exhaustively. Do not omit, summarize or consolidate
 items for brevity. Every distinct action, decision and question must appear. If in
-doubt whether something qualifies, include it — false positives are acceptable,
-false negatives are not. Be thorough and consistent.
+doubt, check the evidence against the definitions. Never include unsupported
+claims, speculative brainstorming or a suggestion that nobody accepted.
+Scan every segment before completing each category. There are no item limits.
+An ACTION is an explicit commitment, assignment, requested task or concrete
+agreed next step. "Please prepare release notes" and "We need to deploy before
+Friday" qualify; "Maybe we could redesign it" does not. A settled priority or
+choice belongs in decisions, not actions unless it also assigns concrete work.
+FOLLOW-UP is a future check, review or verification after an action, decision,
+event or unresolved issue. Put these in follow_ups, not also in action_items.
+An unresolved QUESTION includes remaining uncertainty, investigation or dependency,
+even without a question mark. Never invent questions from topics.
+For each item cite the smallest sufficient evidence span and exact segment_ids.
+One item per distinct commitment; keep separate tasks from the same turn separate.
+An explicit request to discuss, consult, contact or coordinate with someone is an
+ACTION even when no assignee or deadline is named. Do not omit it because it is
+related to an unresolved question: the uncertainty and the requested work are
+separate facts. Follow-ups are specifically subsequent checks or verification,
+not a catch-all for work to do. Before finishing, rescan every source turn for
+commitments or requests that are absent from action_items and follow_ups.
+
 
 Summary: 3-6 concise bullets covering purpose, major discussion, conclusions and
 next steps (fewer for short input). Keep each bullet focused on one fact. For
@@ -49,7 +67,7 @@ summary phrases. Key takeaway: one supported dominant outcome, otherwise null,
 with takeaway_evidence when non-null.
 
 Actions: Extract ALL future tasks, commitments, assignments, contextual requests or
-required follow-ups — do not omit any. 'We should test again before release' is a
+concrete agreed next steps — do not omit any. 'We should test again before release' is a
 task. 'The API is slow' is information, not a task. Resolve pronouns using nearby
 turns. Owner is an explicit assignee or current labeled speaker for a first-person
 commitment; otherwise null. Deadline must be an actual time or milestone, not any
@@ -216,8 +234,7 @@ class GroqAnalyzer:
             system = SYSTEM + "\nJSON schema: " + _json(self.schema)
         else:
             raise AnalysisError("MEETING_LLM_RESPONSE_FORMAT must be json_schema or json_object")
-        # Deterministic seed from content hash ensures identical input always
-        # produces identical output, even across different provider GPU nodes.
+        # Groq seed is best-effort only; reconciliation handles remaining variance.
         seed = int(hashlib.sha256(content.encode("utf-8")).hexdigest()[:8], 16)
         body = {"model": self.model, "messages": [
             {"role": "system", "content": system}, {"role": "user", "content": content}],
@@ -228,6 +245,10 @@ class GroqAnalyzer:
             if effort not in {"low", "medium", "high"}:
                 raise AnalysisError("MEETING_LLM_REASONING_EFFORT must be low, medium or high")
             body["reasoning_effort"] = effort
+        logger.info("Groq request model=%s config=%s prompt_hash=%s input_hash=%s input_bytes=%d estimated_input_tokens_upper_bound=%d",
+                    self.model, {k: v for k, v in body.items() if k not in {"messages", "response_format"}},
+                    hashlib.sha256(system.encode()).hexdigest(), hashlib.sha256(content.encode()).hexdigest(),
+                    _bytes(content), _bytes(content) + _bytes(system) + _bytes(_json(self.schema)))
         request = Request(self.base_url + "/chat/completions", data=_json(body).encode("utf-8"),
                           headers={"Authorization": "Bearer " + self.api_key,
                                    "Content-Type": "application/json", "User-Agent": "MeetingAnalyzer/1.0"}, method="POST")
@@ -265,6 +286,9 @@ class GroqAnalyzer:
                 raise AnalysisError(f"Groq request failed ({type(exc).__name__})") from exc
         try:
             choice = response_body["choices"][0]
+            logger.info("Groq response finish_reason=%s usage=%s fingerprint=%s max_output_tokens=%s",
+                        choice.get("finish_reason"), response_body.get("usage"),
+                        response_body.get("system_fingerprint"), self.output_tokens)
             if choice.get("finish_reason") != "stop":
                 raise AnalysisError("Model response incomplete: " + str(choice.get("finish_reason")))
             if choice["message"].get("refusal"):
@@ -277,18 +301,21 @@ class GroqAnalyzer:
         logger.info("Semantic response: model=%s, input_bytes=%d, output_bytes=%d, usage=%s",
                     self.model, _bytes(_json(provider_payload(payload))), _bytes(content),
                     response_body.get("usage", {}))
-        return parse_response(content)
+        parsed = parse_response(content)
+        if parsed.get("_parse_issues"):
+            raise AnalysisError("Model returned incomplete JSON; previous analysis is unchanged")
+        return parsed
 
 
 def transcript_units(transcript, segments):
     """Preserve all text, plus labels/timestamps where stored segments match it."""
-    clean = [(index, s) for index, s in enumerate(segments)
-             if isinstance(s, dict) and norm(s.get("text"))]
-    if clean and norm(" ".join(s["text"] for _, s in clean)) == norm(transcript):
-        return [{"text": s["text"], "speaker": s.get("speaker") or s.get("speaker_id"),
-                 "segment_id": index, "start": s.get("start")} for index, s in clean]
-    # Unmatched/stale segment caches must not replace any part of the transcript.
-    return [{"text": part} for part in re.split(r"(?<=[.!?。！？])\s+|\n+", transcript) if part.strip()]
+    clean = [s for s in segments if isinstance(s, dict) and norm(s.get("text"))]
+    if clean and norm(" ".join(s["text"] for s in clean)) == norm(transcript):
+        return [{"text": norm(s["text"]), "speaker": s.get("speaker") or s.get("speaker_id"),
+                 "segment_id": index, "start": s.get("start")} for index, s in enumerate(clean)]
+    return [{"text": norm(part), "segment_id": index, "speaker": None, "start": None}
+            for index, part in enumerate(p for p in re.split(r"(?<=[.!????])\s+|\n+", transcript) if p.strip())]
+
 
 
 def chunk_units(units, budget):
@@ -359,7 +386,7 @@ def synthesis_candidates(reports):
     return compact(reports)
 
 
-def analyze_transcript(transcript, segments=None, language="en", duration=None, analyzer=None):
+def analyze_transcript(transcript, segments=None, language="en", duration=None, analyzer=None, meeting_id="transcript"):
     segments = segments or []
     if not norm(transcript):
         empty = Intelligence()
@@ -367,6 +394,12 @@ def analyze_transcript(transcript, segments=None, language="en", duration=None, 
         return {**legacy_payload(empty.model_dump()), "analysis_state": "empty", "analysis_issues": []}
     analyzer = analyzer or GroqAnalyzer()
     units = transcript_units(transcript, segments)
+    # The same normalized segments drive both model input and evidence validation.
+    segments = [{k: v for k, v in u.items() if k != "segment_id"} for u in units]
+    transcript = " ".join(u["text"] for u in units)
+    from backend.services.consistency import manifest, assign_ids, merge_reports
+    provenance = manifest(transcript, segments, language, analyzer)
+    logger.info("Analysis pipeline %s", provenance)
     full_payload = provider_payload({"language": language, "transcript": units})
     if isinstance(analyzer, GroqAnalyzer) and _bytes(_json(full_payload)) <= analyzer.budget - 1024:
         chunks = [units]
@@ -378,59 +411,18 @@ def analyze_transcript(transcript, segments=None, language="en", duration=None, 
     for index, chunk in enumerate(chunks):
         raw = analyzer.request({"language": language, "transcript": chunk},
                                "Extract this meeting." if len(chunks) == 1 else
-                               f"Extract local candidates and important points from chunk {index + 1}/{len(chunks)}. "
+                               f"Extract every supported item from chunk {index + 1}/{len(chunks)}. "
                                "Do not infer what happens in unseen chunks.")
         local_text = " ".join(unit["text"] for unit in chunk)
         report, errors = normalize_analysis(raw, local_text, segments, language, duration, source_transcript=transcript)
         reports.append(report)
         issues.extend(errors)
-    # Normal meetings need exactly one call. Long meetings use compact summaries
-    # and evidence, not repeated full transcripts. Very large sets reduce in tiers.
-    if len(reports) == 1:
-        # Single-chunk: use the validated report directly — no redundant second pass.
-        final = reports[0]
-    else:
-        synthesis_budget = getattr(analyzer, "synthesis_budget", analyzer.budget)
-        levels = 0
-        compact_reports = [_compact(r) for r in reports]
-        while len(compact_reports) > 1:
-            levels += 1
-            if levels > 12:
-                raise AnalysisError("Intermediate analysis could not fit safely; no results were truncated")
-            groups, group = [], []
-            for report in compact_reports:
-                candidate = group + [report]
-                if _bytes(_json(synthesis_candidates(candidate))) > synthesis_budget - 1024:
-                    if not group:
-                        raise AnalysisError("One intermediate report exceeds the synthesis context budget")
-                    groups.append(group)
-                    group = [report]
-                else:
-                    group = candidate
-            if group:
-                groups.append(group)
-            if len(groups) == len(compact_reports):
-                raise AnalysisError("Intermediate reports are too large to merge safely")
-            reduced = []
-            for group in groups:
-                if len(group) == 1:
-                    reduced.append(group[0])
-                    continue
-                raw = analyzer.request({"language": language, "candidates": synthesis_candidates(group)},
-                    "Synthesize these chronological, grounded chunk results. Reconcile resolved questions, "
-                    "merge semantic duplicates of the same event, preserve distinct tasks, assignees and deadlines. "
-                    "Return 3-6 global summary bullets and one dominant takeaway. Keep original evidence "
-                    "verbatim; never quote the paraphrased summaries as transcript evidence. "
-                    "Where candidate quotes are empty, original source segment_ids replace them to save tokens. "
-                    "Reuse those IDs and return an empty evidence string; the server retrieves the exact original text. "
-                    "For repeated discussion, cite one representative original turn. "
-                    "Do not discard distinct supported actions, decisions or questions.")
-                report, errors = normalize_analysis(raw, transcript, segments, language, duration)
-                reduced.append(_compact(report))
-                issues.extend(errors)
-            compact_reports = reduced
-        final, errors = normalize_analysis(compact_reports[0], transcript, segments, language, duration)
-        issues.extend(errors)
+    final = merge_reports(reports)
+    assign_ids(final, meeting_id)
+    final["analysis_manifest"] = provenance
+    final["analysis_manifest"]["chunks"] = [
+        {"segment_ids": [u["segment_id"] for u in chunk],
+         "hash": hashlib.sha256(_json(chunk).encode()).hexdigest()} for chunk in chunks]
     if not any(final[k] for k in ("summary", "action_items", "decisions", "questions", "topics")) and issues:
         raise AnalysisError("No analysis fields survived validation")
     return {**legacy_payload(final), "analysis_state": "partial" if issues else "complete",

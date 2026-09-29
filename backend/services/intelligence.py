@@ -56,6 +56,7 @@ class Intelligence(BaseModel):
     key_takeaway: str | None = None
     takeaway_evidence: Evidence | None = None
     action_items: list[Action] = Field(default_factory=list)
+    follow_ups: list[Action] = Field(default_factory=list)
     decisions: list[Decision] = Field(default_factory=list)
     questions: list[Question] = Field(default_factory=list)
     topics: list[Topic] = Field(default_factory=list)
@@ -148,6 +149,7 @@ def deduplicate(items, field):
         if duplicate is None:
             result.append(item)
         else:
+            logger.info("Extraction deduplicated field=%s evidence_ids=%s reason=same_event_and_semantics", field, item.get("segment_ids", []))
             for key, value in item.items():
                 if not duplicate.get(key) and value:
                     duplicate[key] = value
@@ -172,7 +174,7 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
     if not isinstance(raw, dict):
         raise ValueError("Analysis response must be a JSON object")
     def rows(key):
-        value = raw.get(key)
+        value = raw.get(key, [] if key == "follow_ups" else None)
         if not isinstance(value, list):
             issues.append(key)
             return []
@@ -182,7 +184,7 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
         ref_transcript = source_transcript or transcript
         matched = (evidence_for(quote, ref_transcript, segments)
                    if norm(quote) and norm(quote) in norm(transcript) else None)
-        if matched:
+        if matched and matched["segment_ids"]:
             return matched
         # Exact numbered source references recover quotes without generating text.
         # Include intervening turns for disjoint references: never concatenate
@@ -195,23 +197,16 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
             result = (evidence_for(original, ref_transcript, segments)
                       if original in norm(transcript) else None)
             if result:
+                # Explicit references disambiguate identical repeated source turns.
+                result["segment_ids"] = list(range(min(ids), max(ids) + 1))
+                first = segments[min(ids)]
+                start = first.get("start")
+                result["timestamp"] = start if type(start) in (int, float) and math.isfinite(start) and start >= 0 else None
+                result["speaker"] = first.get("speaker") or first.get("speaker_id")
+                if norm(quote) and norm(quote) in original:
+                    result["evidence"] = norm(quote)
                 return result
-        # Fuzzy fallback: progressively trim the evidence quote to find a match.
-        # This prevents items from being dropped when the LLM adds/removes a word.
-        if norm(quote):
-            fuzzy = _fuzzy_evidence(quote, ref_transcript, segments)
-            if fuzzy:
-                return fuzzy
-        # Last resort: try matching the item's core text (task/decision/question)
-        # directly in the transcript.
-        if fallback_text and norm(fallback_text):
-            direct = evidence_for(fallback_text, ref_transcript, segments)
-            if direct:
-                return direct
-            fuzzy_fb = _fuzzy_evidence(fallback_text, ref_transcript, segments)
-            if fuzzy_fb:
-                return fuzzy_fb
-        return None
+        return matched
 
     summary = raw.get("summary", [])
     if isinstance(summary, str):
@@ -238,22 +233,24 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
         else:
             issues.append("key_takeaway")
 
+    audit = {}
     for key, field, model in (("action_items", "task", Action), ("decisions", "decision", Decision),
-                              ("questions", "question", Question), ("topics", "label", Topic)):
+                              ("questions", "question", Question), ("topics", "label", Topic),
+                              ("follow_ups", "task", Action)):
         valid = []
-        for item in rows(key):
+        items = rows(key)
+        evidence_count = 0
+        for item_index, item in enumerate(items):
             if not isinstance(item, dict) or not norm(item.get(field)):
                 issues.append(key)
+                logger.warning("Extraction rejected category=%s index=%d reason=missing_text", key, item_index)
                 continue
             evidence = source(item, fallback_text=norm(item.get(field)))
             if not evidence:
-                # Evidence could not be grounded in the transcript — keep the item
-                # anyway with the LLM's raw evidence text. Losing a real action item
-                # or decision is worse than missing a timestamp/speaker.
-                raw_quote = norm(item.get("evidence") if isinstance(item, dict) else "")
-                evidence = {"evidence": raw_quote or norm(item.get(field)),
-                            "timestamp": None, "segment_ids": [], "speaker": None}
                 issues.append(key)
+                logger.warning("Extraction rejected category=%s index=%d reason=unmatched_evidence", key, item_index)
+                continue
+            evidence_count += 1
             value = {field: norm(item[field]), **evidence}
             if model is Action:
                 for detail in ("owner", "deadline", "priority"):
@@ -285,6 +282,7 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
                 if norm(item[field]).casefold() in {"yeah", "okay", "meeting", "let", "s",
                                                      "review", "actually", "basically"} or len(norm(item[field])) < 2:
                     issues.append("topics")
+                    logger.warning("Extraction rejected category=topics index=%d reason=generic_label", item_index)
                     continue
                 value["keywords"] = [norm(v) for v in item.get("keywords", [])
                                      if norm(v)] if isinstance(item.get("keywords"), list) else []
@@ -292,7 +290,12 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
                 valid.append(model.model_validate(value).model_dump())
             except ValidationError:
                 issues.append(key)
-        setattr(report, key, [model.model_validate(v) for v in deduplicate(valid, field)])
+                logger.warning("Extraction rejected category=%s index=%d reason=schema_validation", key, item_index)
+        merged = deduplicate(valid, field)
+        audit[key] = {"generated": len(items), "parsed": len(items), "validated": len(valid),
+                      "evidence_matched": evidence_count, "deduplicated": len(merged)}
+        logger.info("Extraction counts category=%s stages=%s", key, audit[key])
+        setattr(report, key, [model.model_validate(v) for v in merged])
 
     entities = raw.get("entities")
     if not isinstance(entities, dict):
@@ -332,7 +335,7 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
             issues.append("summary")
     if issues:
         logger.warning("Analysis fields needing recovery: %s", sorted(set(issues)))
-    return report.model_dump(), sorted(set(issues))
+    return {**report.model_dump(), "extraction_audit": audit}, sorted(set(issues))
 
 
 def build_intelligence(result, transcript, segments=None, language="en"):

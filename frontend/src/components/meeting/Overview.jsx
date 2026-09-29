@@ -29,9 +29,10 @@ export function ActionItems({items, ...evidenceProps}) {
 export function Decisions({items, ...evidenceProps}) {
   return <Panel title="Decisions made" count={items.length} className="mi-decisions">{!items.length ? <Empty>No explicit decisions were identified in this meeting.</Empty> : items.map((item, index) => <article className="mi-insight" key={index}><p dir="auto">{text(item.decision)}</p><Evidence item={item} {...evidenceProps}/></article>)}</Panel>
 }
-export function OpenQuestions({items, ...evidenceProps}) {
+export function OpenQuestions({items, followUps = [], ...evidenceProps}) {
+  items = [...items, ...followUps.map(item => ({...item, question: item.task}))]
   return <Panel title="Open questions & follow-ups" count={items.length} className="mi-questions">
-    {!items.length ? <Empty>No important questions were identified.</Empty> : items.map((item, index) => <article className="mi-insight" key={index}><span className={`mi-pill ${item.status === 'Resolved' ? 'mi-resolved' : ''}`}>{text(item.status) || 'Not assessed'}</span><p dir="auto">{text(item.question)}</p>{text(item.answer) && <p className="mi-answer">Answer: {item.answer}</p>}<Evidence item={item} {...evidenceProps}/>{item.answer_evidence && <Evidence item={item.answer_evidence} {...evidenceProps}/>}</article>)}
+    {!items.length ? <Empty>No important questions were identified.</Empty> : items.map((item, index) => <article className="mi-insight" key={item.id || index}><span className={`mi-pill ${item.status === 'Resolved' ? 'mi-resolved' : ''}`}>{text(item.status) || 'Not assessed'}</span><p dir="auto">{text(item.question)}</p>{text(item.answer) && <p className="mi-answer">Answer: {item.answer}</p>}<Evidence item={item} {...evidenceProps}/>{item.answer_evidence && <Evidence item={item.answer_evidence} {...evidenceProps}/>}</article>)}
   </Panel>
 }
 export function DiscussionTopics({items, ...evidenceProps}) {
@@ -45,6 +46,6 @@ export function EntityPanel({entities}) {
 export default function Overview({analysis, segments, onJump}) {
   const i = analysis.intelligence, evidenceProps = {segments, onJump}
   return <div className="mi-overview"><MeetingSummary intelligence={i}/>
-    <ActionItems items={i.action_items} {...evidenceProps}/><div className="mi-grid"><Decisions items={i.decisions} {...evidenceProps}/><OpenQuestions items={i.questions} {...evidenceProps}/></div>
+    <ActionItems items={i.action_items} {...evidenceProps}/><div className="mi-grid"><Decisions items={i.decisions} {...evidenceProps}/><OpenQuestions items={i.questions} followUps={list(i.follow_ups)} {...evidenceProps}/></div>
     <div className="mi-grid"><DiscussionTopics items={i.topics} {...evidenceProps}/><EntityPanel entities={i.entities}/></div></div>
 }

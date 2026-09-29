@@ -35,7 +35,7 @@ function MeetingDashboard({fileId}) {
   function retry() {setLoading(true); setError(''); setTranscriptError(''); setReload(v => v + 1)}
   async function runAnalysis() {
     setBusy(true); setError('')
-    try {setAnalysis(normalizeAnalysis(await analyzeMeeting(fileId)))}
+    try {setAnalysis(normalizeAnalysis(await analyzeMeeting(fileId, undefined, true)))}
     catch (e) {setError(e.message || 'Analysis failed. Please retry.')}
     finally {setBusy(false)}
   }

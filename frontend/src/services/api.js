@@ -116,11 +116,11 @@ export async function listMeetings() {
  *   action_items, decisions, questions, summary
  * }>}
  */
-export async function analyzeMeeting(fileId, model) {
+export async function analyzeMeeting(fileId, model, force = false) {
   const url = model
     ? `${BASE}/api/analysis/${fileId}?abstractive_model=${encodeURIComponent(model)}`
     : `${BASE}/api/analysis/${fileId}`
-  const res = await fetch(url, { method: 'POST' })
+  const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}force=${force}`, { method: 'POST' })
   return _handleResponse(res)
 }
 

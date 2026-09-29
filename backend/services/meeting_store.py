@@ -65,3 +65,39 @@ def list_local_meetings():
                              "duration": value.get("duration"), "language": value.get("language"),
                              "uploaded_at": value.get("uploaded_at"), "status": "done"})
     return sorted(meetings, key=lambda m: m.get("uploaded_at") or "", reverse=True)
+
+
+class AnalysisInProgress(RuntimeError):
+    pass
+
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def analysis_lock(file_id):
+    """OS lock serializes analysis across threads/workers and releases on process exit."""
+    target = path_for(file_id, "analysis.lock")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a+b") as handle:
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise AnalysisInProgress("Analysis is already running for this meeting") from exc
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

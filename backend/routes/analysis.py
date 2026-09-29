@@ -6,8 +6,9 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from backend.services.semantic import analyze_transcript, ProviderError
-from backend.services.meeting_store import load_meeting, save_local, read_local
+from backend.services.semantic import analyze_transcript, ProviderError, GroqAnalyzer, transcript_units
+from backend.services.consistency import manifest, same_pipeline, reconcile
+from backend.services.meeting_store import load_meeting, save_local, read_local, analysis_lock, AnalysisInProgress
 
 logger = logging.getLogger("meeting_analyzer.analysis")
 router = APIRouter()
@@ -93,9 +94,9 @@ def _fetch_stored_analysis(file_id):
     return None
 
 
-def run_nlp_pipeline(transcript_text, abstractive_model=None, language="en", segments=None, duration=None):
+def run_nlp_pipeline(transcript_text, abstractive_model=None, language="en", segments=None, duration=None, analyzer=None, meeting_id="transcript"):
     """Keep the existing entry point; the old model query is accepted for compatibility."""
-    return analyze_transcript(transcript_text, segments, language, duration)
+    return analyze_transcript(transcript_text, segments, language, duration, analyzer, meeting_id)
 
 
 def _attempt(file_id, state):
@@ -107,17 +108,41 @@ def _attempt(file_id, state):
 
 
 @router.post("/{file_id}", summary="Analyze a stored meeting with transcript-grounded semantic extraction")
-def analyze(file_id: str, abstractive_model: str | None = Query(default=None, deprecated=True)):
+def analyze(file_id: str, abstractive_model: str | None = Query(default=None, deprecated=True), force: bool = False):
     _valid_id(file_id)
+    try:
+        with analysis_lock(file_id):
+            return _analyze_locked(file_id, force)
+    except AnalysisInProgress as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _analyze_locked(file_id, force):
     meeting = read_local(file_id, "transcript.json") or load_meeting(file_id, _get_db())
     if meeting is None:
         _fetch_transcript(file_id)
         meeting = read_local(file_id, "transcript.json") or load_meeting(file_id, _get_db()) or {}
     transcript = meeting.get("full_text", "")
+    previous = _fetch_stored_analysis(file_id)
     _attempt(file_id, "processing")
     try:
+        analyzer = GroqAnalyzer()
+        units = transcript_units(transcript, meeting.get("segments") or [])
+        segments = [{k: v for k, v in u.items() if k != "segment_id"} for u in units]
+        transcript = " ".join(u["text"] for u in units)
+        current = manifest(transcript, segments, meeting.get("language") or "en", analyzer)
+        prior = ((previous or {}).get("intelligence") or {}).get("analysis_manifest", {})
+        if not force and previous and previous.get("analysis_state") == "complete" and same_pipeline(prior, current):
+            logger.info("Analysis cache hit meeting=%s input_hash=%s", file_id, current["input_hash"])
+            _attempt(file_id, "complete")
+            return JSONResponse(content=previous)
+        save_local(file_id, "analysis_input.json", {"manifest": current, "segments": segments, "transcript": transcript})
         result = run_nlp_pipeline(transcript, language=meeting.get("language") or "en",
-                                  segments=meeting.get("segments"), duration=meeting.get("duration"))
+                                  segments=segments, duration=meeting.get("duration"), analyzer=analyzer, meeting_id=file_id)
+        if previous:
+            save_local(file_id, "analysis_previous.json", previous)
+        save_local(file_id, "analysis_candidate.json", result)
+        result = reconcile(previous, result, transcript, segments, file_id)
         result.update(file_id=file_id, analyzed_at=datetime.now(timezone.utc).isoformat())
         _persist_analysis(file_id, result)
     except ProviderError as exc:
