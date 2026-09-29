@@ -95,6 +95,30 @@ def evidence_for(quote, transcript, segments):
     return result
 
 
+def _fuzzy_evidence(quote, transcript, segments):
+    """Progressively trim the LLM's evidence quote until a match is found.
+
+    LLMs sometimes prepend/append an extra word or miss punctuation.
+    By trimming words from the edges we recover the longest matching
+    substring without inventing any text.
+    """
+    words = norm(quote).split()
+    if len(words) < 3:
+        return None
+    transcript_norm = norm(transcript)
+    # Try dropping up to 3 words from each end
+    for drop_left in range(min(4, len(words))):
+        for drop_right in range(min(4, len(words) - drop_left)):
+            end = len(words) - drop_right if drop_right else len(words)
+            candidate = " ".join(words[drop_left:end])
+            # Require at least 60% of the original words and minimum length
+            if len(candidate) < 15 or end - drop_left < len(words) * 0.6:
+                continue
+            if candidate in transcript_norm:
+                return evidence_for(candidate, transcript, segments)
+    return None
+
+
 def _contains(value, context):
     return bool(value and re.search(r"(?<!\w)" + re.escape(value.casefold()) + r"(?!\w)",
                                     norm(context).casefold()))
@@ -153,9 +177,10 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
             issues.append(key)
             return []
         return value
-    def source(value):
+    def source(value, fallback_text=None):
         quote = value.get("evidence") if isinstance(value, dict) else value
-        matched = (evidence_for(quote, source_transcript or transcript, segments)
+        ref_transcript = source_transcript or transcript
+        matched = (evidence_for(quote, ref_transcript, segments)
                    if norm(quote) and norm(quote) in norm(transcript) else None)
         if matched:
             return matched
@@ -167,8 +192,25 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
                 all(type(i) is int and 0 <= i < len(segments) for i in ids)):
             original = " ".join(norm(segments[i].get("text"))
                                 for i in range(min(ids), max(ids) + 1))
-            return (evidence_for(original, source_transcript or transcript, segments)
-                    if original in norm(transcript) else None)
+            result = (evidence_for(original, ref_transcript, segments)
+                      if original in norm(transcript) else None)
+            if result:
+                return result
+        # Fuzzy fallback: progressively trim the evidence quote to find a match.
+        # This prevents items from being dropped when the LLM adds/removes a word.
+        if norm(quote):
+            fuzzy = _fuzzy_evidence(quote, ref_transcript, segments)
+            if fuzzy:
+                return fuzzy
+        # Last resort: try matching the item's core text (task/decision/question)
+        # directly in the transcript.
+        if fallback_text and norm(fallback_text):
+            direct = evidence_for(fallback_text, ref_transcript, segments)
+            if direct:
+                return direct
+            fuzzy_fb = _fuzzy_evidence(fallback_text, ref_transcript, segments)
+            if fuzzy_fb:
+                return fuzzy_fb
         return None
 
     summary = raw.get("summary", [])
@@ -203,10 +245,15 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
             if not isinstance(item, dict) or not norm(item.get(field)):
                 issues.append(key)
                 continue
-            evidence = source(item)
+            evidence = source(item, fallback_text=norm(item.get(field)))
             if not evidence:
+                # Evidence could not be grounded in the transcript — keep the item
+                # anyway with the LLM's raw evidence text. Losing a real action item
+                # or decision is worse than missing a timestamp/speaker.
+                raw_quote = norm(item.get("evidence") if isinstance(item, dict) else "")
+                evidence = {"evidence": raw_quote or norm(item.get(field)),
+                            "timestamp": None, "segment_ids": [], "speaker": None}
                 issues.append(key)
-                continue
             value = {field: norm(item[field]), **evidence}
             if model is Action:
                 for detail in ("owner", "deadline", "priority"):

@@ -244,7 +244,7 @@ navigation, search/filtering, refresh, PDF download, mobile overflow, malformed
 responses, and retry. Playwright is a development-only test tool.
 
 Provider throughput limits are separate from the model context window. The
-MEETING_LLM_MAX_INPUT_BYTES setting defaults to 8192 and bounds each extraction
+MEETING_LLM_MAX_INPUT_BYTES setting defaults to 16384 and bounds each extraction
 payload. Compact synthesis has a separate MEETING_LLM_SYNTHESIS_BYTES ceiling
 (default 12288). Lower these if Groq returns HTTP 413 for your account token
 limit; increasing context size does not fix that limit. Compact synthesis uses
@@ -253,3 +253,5 @@ GPT-OSS requests default to low reasoning effort to reduce output-token usage;
 MEETING_LLM_REASONING_EFFORT can override this with low, medium or high. This
 option is sent only for the supported GPT-OSS models. Provider references:
 https://console.groq.com/docs/rate-limits and https://console.groq.com/docs/reasoning.
+
+Analysis requests compact transcript turns as source ID, speaker, and original text. The default input ceiling is 16384 UTF-8 bytes (also capped by the context budget), so ordinary meetings can use one extraction call. Groq rate limits receive at most one retry per analysis, with at most 15 seconds of backoff. `MEETING_LLM_TIMEOUT_SECONDS` defaults to 45 per request; `MEETING_LLM_TOTAL_TIMEOUT_SECONDS` defaults to a 90-second request budget across extraction and synthesis. Provider errors are shown in the analysis response.

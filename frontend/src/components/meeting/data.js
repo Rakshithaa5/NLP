@@ -17,7 +17,7 @@ export function normalizeMeeting(value) {
     duration: number(m.duration), uploaded_at: text(m.uploaded_at),
     segments: list(m.segments).map((value, index) => {
       const s = object(value)
-      return {id: index, text: text(s.text), start: number(s.start), end: number(s.end),
+      return {id: s.id ?? index, text: text(s.text), start: number(s.start), end: number(s.end),
         speaker: text(s.speaker) || text(s.speaker_id) || null}
     })}
 }

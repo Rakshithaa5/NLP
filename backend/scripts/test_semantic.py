@@ -148,6 +148,48 @@ class SemanticTests(unittest.TestCase):
         evidence = evidence_for("Real.", "Real. Other.", [{"text": "Real.", "start": 999}])
         self.assertIsNone(evidence["timestamp"])
 
+    def test_segment_metadata_does_not_force_extra_provider_calls(self):
+        segments = [{"text": "We agreed to test the release.", "start": i}
+                    for i in range(250)]
+        text = " ".join(s["text"] for s in segments)
+        with patch.dict(os.environ, {"MEETING_LLM_MAX_INPUT_BYTES": "16384"}), patch.object(
+                GroqAnalyzer, "request", return_value=response(segments[0]["text"])) as call:
+            analyze_transcript(text, segments)
+        self.assertEqual(call.call_count, 1)
+        from backend.services.semantic import provider_payload
+        payload = provider_payload(call.call_args.args[0])
+        self.assertEqual([row[0] for row in payload["transcript"]], list(range(250)))
+        self.assertEqual(" ".join(row[2] for row in payload["transcript"]), text)
+
+    def test_repeated_rate_limit_stops_after_one_retry(self):
+        from urllib.error import HTTPError
+        from backend.services.semantic import ProviderError
+        errors = [HTTPError("https://example.test", 429, "rate limit",
+                            {"Retry-After": "1"}, None) for _ in range(2)]
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-only"}), patch(
+                "backend.services.semantic.urlopen", side_effect=errors) as call, patch(
+                "backend.services.semantic.time.sleep") as sleep:
+            with self.assertRaisesRegex(ProviderError, "rate limit"):
+                GroqAnalyzer().request({}, "Extract.")
+        self.assertEqual(call.call_count, 2)
+        sleep.assert_called_once_with(1.0)
+
+    def test_long_rate_limit_and_expired_budget_do_not_wait(self):
+        from urllib.error import HTTPError
+        from backend.services.semantic import ProviderError
+        error = HTTPError("https://example.test", 429, "rate limit", {"Retry-After": "60"}, None)
+        with patch.dict(os.environ, {"GROQ_API_KEY": "test-only"}), patch(
+                "backend.services.semantic.urlopen", side_effect=error) as call, patch(
+                "backend.services.semantic.time.sleep") as sleep:
+            analyzer = GroqAnalyzer()
+            with self.assertRaises(ProviderError):
+                analyzer.request({}, "Extract.")
+            analyzer.deadline = 0
+            with self.assertRaisesRegex(ProviderError, "time budget"):
+                analyzer.request({}, "Extract.")
+        self.assertEqual(call.call_count, 1)
+        sleep.assert_not_called()
+
     def test_rate_limit_retries_are_bounded(self):
         from io import StringIO
         from urllib.error import HTTPError

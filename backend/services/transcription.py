@@ -24,19 +24,23 @@ _COMPUTE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")  # "int8", "float16", "floa
 _model = None
 
 
-def _get_model():
+def _get_model(force_cpu=False):
     """Lazily load and cache the Faster-Whisper model."""
     global _model
+    if force_cpu:
+        _model = None
     if _model is None:
         from faster_whisper import WhisperModel  # imported lazily to avoid slow startup
 
+        device = "cpu" if force_cpu else _DEVICE
+        compute = "int8" if force_cpu else _COMPUTE
         logger.info(
             "Loading Faster-Whisper model '%s' on device=%s compute=%s …",
             _DEFAULT_MODEL,
-            _DEVICE,
-            _COMPUTE,
+            device,
+            compute,
         )
-        _model = WhisperModel(_DEFAULT_MODEL, device=_DEVICE, compute_type=_COMPUTE)
+        _model = WhisperModel(_DEFAULT_MODEL, device=device, compute_type=compute)
         logger.info("Faster-Whisper model loaded.")
     return _model
 
@@ -69,26 +73,37 @@ def transcribe(audio_path: str, language: Optional[str] = None) -> dict:
     logger.info("Transcribing: %s (language=%s)", audio_path, language or "auto-detect")
 
     try:
-        model = _get_model()
-        segments_iter, info = model.transcribe(
-            audio_path,
-            language=language,
-            beam_size=5,
-            vad_filter=True,          # voice-activity detection — skips silences
-            vad_parameters=dict(min_silence_duration_ms=500),
-        )
+        for attempt in range(2):
+            try:
+                model = _get_model(force_cpu=attempt == 1)
+                segments_iter, info = model.transcribe(
+                    audio_path,
+                    language=language,
+                    beam_size=5,
+                    vad_filter=True,          # voice-activity detection — skips silences
+                    vad_parameters=dict(min_silence_duration_ms=500),
+                )
 
-        segments = []
-        for seg in segments_iter:
-            segments.append(
-                {
-                    "start": round(seg.start, 3),
-                    "end": round(seg.end, 3),
-                    "text": seg.text.strip(),
-                }
-            )
-            logger.debug("[%.1fs → %.1fs] %s", seg.start, seg.end, seg.text.strip())
-
+                segments = []
+                for seg in segments_iter:
+                    segments.append(
+                        {
+                            "start": round(seg.start, 3),
+                            "end": round(seg.end, 3),
+                            "text": seg.text.strip(),
+                        }
+                    )
+                    logger.debug("[%.1fs → %.1fs] %s", seg.start, seg.end, seg.text.strip())
+                break
+            except RuntimeError as exc:
+                # CUDA errors can occur when consuming the lazy segment iterator.
+                message = str(exc).lower()
+                gpu_failure = any(token in message for token in (
+                    "cuda", "cublas", "cudnn", "cufft", "curand", "cusolver", "cusparse",
+                ))
+                if attempt or _DEVICE.lower() not in {"cuda", "auto"} or not gpu_failure:
+                    raise
+                logger.warning("GPU transcription unavailable; retrying on CPU: %s", exc)
     except Exception as exc:
         logger.exception("Transcription failed: %s", exc)
         raise RuntimeError(f"Transcription failed: {exc}") from exc

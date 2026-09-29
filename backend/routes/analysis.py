@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from backend.services.semantic import analyze_transcript
+from backend.services.semantic import analyze_transcript, ProviderError
 from backend.services.meeting_store import load_meeting, save_local, read_local
 
 logger = logging.getLogger("meeting_analyzer.analysis")
@@ -31,7 +31,7 @@ def _valid_id(file_id):
 
 
 def _fetch_transcript(file_id):
-    meeting = load_meeting(file_id, _get_db())
+    meeting = read_local(file_id, "transcript.json") or load_meeting(file_id, _get_db())
     if meeting is not None and "full_text" in meeting:
         return meeting["full_text"]
     from backend.services.meeting_store import path_for
@@ -109,10 +109,10 @@ def _attempt(file_id, state):
 @router.post("/{file_id}", summary="Analyze a stored meeting with transcript-grounded semantic extraction")
 def analyze(file_id: str, abstractive_model: str | None = Query(default=None, deprecated=True)):
     _valid_id(file_id)
-    meeting = load_meeting(file_id, _get_db())
+    meeting = read_local(file_id, "transcript.json") or load_meeting(file_id, _get_db())
     if meeting is None:
         _fetch_transcript(file_id)
-        meeting = load_meeting(file_id, _get_db()) or {}
+        meeting = read_local(file_id, "transcript.json") or load_meeting(file_id, _get_db()) or {}
     transcript = meeting.get("full_text", "")
     _attempt(file_id, "processing")
     try:
@@ -120,6 +120,10 @@ def analyze(file_id: str, abstractive_model: str | None = Query(default=None, de
                                   segments=meeting.get("segments"), duration=meeting.get("duration"))
         result.update(file_id=file_id, analyzed_at=datetime.now(timezone.utc).isoformat())
         _persist_analysis(file_id, result)
+    except ProviderError as exc:
+        logger.warning("Meeting analysis provider unavailable for %s: %s", file_id, exc)
+        _attempt(file_id, "failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception:
         logger.exception("Meeting analysis failed for %s", file_id)
         _attempt(file_id, "failed")
