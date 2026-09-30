@@ -9,7 +9,7 @@ export function timestamp(value) {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor(seconds % 3600 / 60)
   const s = Math.floor(seconds % 60)
-  return `${h ? `${h}:` : ''}${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${h ? `${String(h).padStart(2, '0')}:` : ''}${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 export function normalizeMeeting(value) {
   const m = object(value)

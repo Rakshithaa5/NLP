@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from backend.services.audio import extract_audio
 from backend.services.transcription import transcribe
@@ -240,6 +240,33 @@ async def list_meetings():
 
 
 # ── GET /api/upload/{file_id} ─────────────────────────────────────────────────
+@router.get("/media/{file_id}", summary="Serve the original meeting media file")
+async def get_media(file_id: str):
+    """Return the uploaded original media for playback, falling back to the extracted WAV if needed."""
+    upload_dir = _DATA_DIR / file_id
+    if not upload_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Meeting '{file_id}' not found.")
+
+    candidates = sorted(upload_dir.glob("raw.*"), key=lambda p: p.name)
+    if not candidates:
+        wav = upload_dir / "audio.wav"
+        if wav.exists():
+            return FileResponse(path=wav, media_type="audio/wav")
+        raise HTTPException(status_code=404, detail=f"Media for '{file_id}' is unavailable.")
+
+    media_path = candidates[0]
+    suffix = media_path.suffix.lower()
+    media_types = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".avi": "video/x-msvideo",
+    }
+    return FileResponse(path=media_path, media_type=media_types.get(suffix, "application/octet-stream"))
+
+
 @router.get("/{file_id}", summary="Retrieve stored transcript for a meeting")
 async def get_transcript(file_id: str):
     """

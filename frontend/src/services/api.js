@@ -96,6 +96,10 @@ export async function getTranscript(fileId) {
   return _handleResponse(res)
 }
 
+export function getMediaUrl(fileId) {
+  return `${BASE}/api/upload/media/${fileId}`
+}
+
 /**
  * List all previously uploaded meetings.
  *

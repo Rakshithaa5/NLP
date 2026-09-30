@@ -7,9 +7,14 @@ export function Empty({children}) { return <p className="mi-empty">{children}</p
 export function Evidence({item, onJump, segments}) {
   const quote = text(item.evidence)
   const ids = list(item.segment_ids).filter(id => Number.isInteger(id) && segments[id]?.text)
-  if (!quote) return null
-  return <details className="mi-evidence"><summary>Transcript evidence</summary><blockquote dir="auto">{quote}</blockquote>
-    {ids.length > 0 && <button className="mi-link" onClick={() => onJump(ids[0])}>View transcript{typeof item.timestamp === 'number' ? ` at ${timestamp(item.timestamp)}` : ''} <span aria-hidden="true">&#8599;</span></button>}
+  const hasTarget = ids.length > 0 || typeof item.timestamp === 'number'
+  if (!quote && !hasTarget) return null
+  return <details className="mi-evidence"><summary>Transcript evidence</summary><blockquote dir="auto">{quote || 'Evidence is available in the transcript.'}</blockquote>
+    {hasTarget ? (
+      <button type="button" className="mi-link" onClick={() => onJump(item)}>View in transcript{typeof item.timestamp === 'number' ? ` at ${timestamp(item.timestamp)}` : ''} <span aria-hidden="true">&#8599;</span></button>
+    ) : (
+      <button type="button" className="mi-link mi-link-disabled" disabled>Evidence unavailable</button>
+    )}
   </details>
 }
 export function MeetingSummary({intelligence}) {
