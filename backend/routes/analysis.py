@@ -1,12 +1,14 @@
 """Stored transcript -> semantic analysis -> persistence and dashboard API."""
 import logging
+import time
+import math
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from backend.services.semantic import analyze_transcript, ProviderError, GroqAnalyzer, transcript_units
+from backend.services.semantic import analyze_transcript, ProviderError, RateLimitError, GroqAnalyzer, transcript_units
 from backend.services.consistency import manifest, same_pipeline, reconcile
 from backend.services.meeting_store import load_meeting, save_local, read_local, analysis_lock, AnalysisInProgress
 
@@ -94,15 +96,15 @@ def _fetch_stored_analysis(file_id):
     return None
 
 
-def run_nlp_pipeline(transcript_text, abstractive_model=None, language="en", segments=None, duration=None, analyzer=None, meeting_id="transcript"):
+def run_nlp_pipeline(transcript_text, abstractive_model=None, language="en", segments=None, duration=None, analyzer=None, meeting_id="transcript", checkpoint=None, on_checkpoint=None):
     """Keep the existing entry point; the old model query is accepted for compatibility."""
-    return analyze_transcript(transcript_text, segments, language, duration, analyzer, meeting_id)
+    return analyze_transcript(transcript_text, segments, language, duration, analyzer, meeting_id, checkpoint, on_checkpoint)
 
 
-def _attempt(file_id, state):
+def _attempt(file_id, state, **details):
     try:
         save_local(file_id, "analysis_state.json", {
-            "state": state, "updated_at": datetime.now(timezone.utc).isoformat()})
+            "state": state, "updated_at": datetime.now(timezone.utc).isoformat(), **details})
     except OSError:
         logger.exception("Could not save analysis attempt state")
 
@@ -124,7 +126,7 @@ def _analyze_locked(file_id, force):
         meeting = read_local(file_id, "transcript.json") or load_meeting(file_id, _get_db()) or {}
     transcript = meeting.get("full_text", "")
     previous = _fetch_stored_analysis(file_id)
-    _attempt(file_id, "processing")
+    prior_attempt = read_local(file_id, "analysis_state.json") or {}
     try:
         analyzer = GroqAnalyzer()
         units = transcript_units(transcript, meeting.get("segments") or [])
@@ -134,17 +136,31 @@ def _analyze_locked(file_id, force):
         prior = ((previous or {}).get("intelligence") or {}).get("analysis_manifest", {})
         if not force and previous and previous.get("analysis_state") == "complete" and same_pipeline(prior, current):
             logger.info("Analysis cache hit meeting=%s input_hash=%s", file_id, current["input_hash"])
-            _attempt(file_id, "complete")
+            if prior_attempt.get("retry_at", 0) <= time.time():
+                _attempt(file_id, "complete")
             return JSONResponse(content=previous)
+        remaining = math.ceil(prior_attempt.get("retry_at", 0) - time.time())
+        if remaining > 0:
+            raise RateLimitError(remaining, prior_attempt.get("limit_kind"))
+        _attempt(file_id, "processing")
         save_local(file_id, "analysis_input.json", {"manifest": current, "segments": segments, "transcript": transcript})
+        checkpoint = read_local(file_id, "analysis_chunks.json") or {}
         result = run_nlp_pipeline(transcript, language=meeting.get("language") or "en",
-                                  segments=segments, duration=meeting.get("duration"), analyzer=analyzer, meeting_id=file_id)
+                                  segments=segments, duration=meeting.get("duration"), analyzer=analyzer, meeting_id=file_id, checkpoint=checkpoint,
+                                  on_checkpoint=lambda progress: save_local(file_id, "analysis_chunks.json", progress))
         if previous:
             save_local(file_id, "analysis_previous.json", previous)
         save_local(file_id, "analysis_candidate.json", result)
         result = reconcile(previous, result, transcript, segments, file_id)
         result.update(file_id=file_id, analyzed_at=datetime.now(timezone.utc).isoformat())
         _persist_analysis(file_id, result)
+        # A completed explicit re-analysis starts a fresh attempt next time.
+        checkpoint["state"] = "complete"
+        save_local(file_id, "analysis_chunks.json", checkpoint)
+    except RateLimitError as exc:
+        _attempt(file_id, "rate_limited", retry_at=time.time() + exc.retry_after, message=str(exc), limit_kind=exc.limit_kind)
+        raise HTTPException(status_code=429, detail=str(exc),
+                            headers={"Retry-After": str(exc.retry_after)}) from exc
     except ProviderError as exc:
         logger.warning("Meeting analysis provider unavailable for %s: %s", file_id, exc)
         _attempt(file_id, "failed")
@@ -163,6 +179,10 @@ async def get_analysis(file_id: str):
     stored = _fetch_stored_analysis(file_id)
     attempt = read_local(file_id, "analysis_state.json")
     if stored is None:
+        if attempt and attempt.get("state") == "rate_limited":
+            remaining = max(0, math.ceil(attempt.get("retry_at", 0) - time.time()))
+            raise HTTPException(status_code=429, detail=attempt.get("message", "Groq rate limit reached."),
+                                headers={"Retry-After": str(remaining)})
         if attempt and attempt.get("state") == "failed":
             raise HTTPException(status_code=502, detail=FAILURE_MESSAGE)
         raise HTTPException(status_code=404, detail="No analysis yet. Analyze this meeting first.")

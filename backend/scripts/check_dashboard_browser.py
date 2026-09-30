@@ -76,11 +76,11 @@ def main():
         page.reload()
         expect(page.get_by_role("alert").filter(has_text="Analysis service unavailable")).to_be_visible(timeout=30000)
         expect(page.get_by_role("button", name="Retry loading")).to_be_visible()
-        expect(page.get_by_role("button", name="Retry analysis", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Retry analysis", exact=True)).to_have_count(0)
         # Retry success is an explicit browser fixture; the real API path was tested above.
         context.route("**/api/analysis/**", lambda route: route.fulfill(json={
             "intelligence": report, "analysis_state": "complete"}))
-        page.get_by_role("button", name="Retry analysis", exact=True).click()
+        page.get_by_role("button", name="Retry loading", exact=True).click()
         expect(page.get_by_role("alert")).to_have_count(0)
         page.get_by_role("tab", name="Overview", exact=True).click()
         expect(page.get_by_role("heading", name="AI Meeting Summary")).to_be_visible()

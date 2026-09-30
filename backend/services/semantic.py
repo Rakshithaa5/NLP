@@ -2,6 +2,8 @@
 import hashlib
 import json
 import logging
+import math
+from email.utils import parsedate_to_datetime
 import os
 import re
 import time
@@ -19,6 +21,47 @@ class AnalysisError(RuntimeError):
 
 class ProviderError(AnalysisError):
     """Safe, actionable provider failure for the API response."""
+
+
+class RateLimitError(ProviderError):
+    """Provider cooldown can be returned to the client without losing prior results."""
+    def __init__(self, retry_after=60, limit_kind=None):
+        self.limit_kind = limit_kind
+        label = {"TPM": "tokens per minute", "TPD": "tokens per day",
+                 "RPM": "requests per minute", "RPD": "requests per day"}.get(limit_kind)
+        message = "Groq rate limit reached" + (" (" + label + ")" if label else "") + "."
+        if limit_kind in {"TPD", "RPD"}:
+            message += " The daily quota must recover, or the account limit must be increased."
+        else:
+            message += " Analysis can be retried after the cooldown."
+        super().__init__(message)
+        self.retry_after = max(1, math.ceil(retry_after))
+
+
+def retry_delay(headers, default=60):
+    value = headers.get("Retry-After") if headers else None
+    try:
+        delay = float(value)
+    except (ValueError, TypeError):
+        try:
+            delay = parsedate_to_datetime(value).timestamp() - time.time()
+        except (ValueError, TypeError, AttributeError, OverflowError):
+            return default
+    return max(1, math.ceil(delay)) if math.isfinite(delay) else default
+
+
+def rate_limit_kind(error):
+    """Extract only a fixed quota label; never log provider bodies or organization IDs."""
+    try:
+        body = json.loads(error.read(65536))
+        message = body.get("error", {}).get("message", "")
+        for code, phrase in (("TPD", "tokens per day"), ("RPD", "requests per day"),
+                             ("TPM", "tokens per minute"), ("RPM", "requests per minute")):
+            if phrase in message.lower() or re.search(r"\b" + code + r"\b", message):
+                return code
+    except (ValueError, TypeError, AttributeError, OSError):
+        pass
+    return None
 
 
 def provider_payload(payload):
@@ -262,21 +305,26 @@ class GroqAnalyzer:
                 break
             except HTTPError as exc:
                 # Providers may echo transcripts in bodies; log only status.
+                delay = retry_delay(exc.headers, 60 if exc.code == 429 else 2)
                 if exc.code in {429, 502, 503, 504} and self.retries_left:
-                    try:
-                        delay = float(exc.headers.get("Retry-After", 2))
-                    except (ValueError, TypeError, AttributeError):
-                        delay = 2
                     if 0 <= delay <= 15 and delay + 5 < self.deadline - time.monotonic():
                         self.retries_left -= 1
                         logger.warning("Groq HTTP %s; retrying once in %.1fs", exc.code, delay)
                         exc.close()
                         time.sleep(delay)
                         continue
+                limit_kind = rate_limit_kind(exc) if exc.code == 429 else None
+                if exc.code == 429:
+                    logger.warning("Groq quota kind=%s retry_after=%s limits=%s", limit_kind, delay,
+                                   {k: exc.headers.get(k) for k in ("x-ratelimit-limit-tokens",
+                                    "x-ratelimit-remaining-tokens", "x-ratelimit-reset-tokens",
+                                    "x-ratelimit-limit-requests", "x-ratelimit-remaining-requests",
+                                    "x-ratelimit-reset-requests")} if exc.headers else {})
                 exc.close()
                 logger.error("Groq request failed: HTTP %s, model=%s", exc.code, self.model)
+                if exc.code == 429:
+                    raise RateLimitError(delay, limit_kind) from exc
                 messages = {
-                    429: "Groq rate limit reached. Please wait a minute before retrying analysis.",
                     401: "Groq rejected the API key. Check GROQ_API_KEY in the backend configuration.",
                     403: "Groq denied access. Check the API key and model permissions.",
                     413: "Groq input limit exceeded. Lower MEETING_LLM_MAX_INPUT_BYTES.",
@@ -386,7 +434,7 @@ def synthesis_candidates(reports):
     return compact(reports)
 
 
-def analyze_transcript(transcript, segments=None, language="en", duration=None, analyzer=None, meeting_id="transcript"):
+def analyze_transcript(transcript, segments=None, language="en", duration=None, analyzer=None, meeting_id="transcript", checkpoint=None, on_checkpoint=None):
     segments = segments or []
     if not norm(transcript):
         empty = Intelligence()
@@ -397,7 +445,7 @@ def analyze_transcript(transcript, segments=None, language="en", duration=None, 
     # The same normalized segments drive both model input and evidence validation.
     segments = [{k: v for k, v in u.items() if k != "segment_id"} for u in units]
     transcript = " ".join(u["text"] for u in units)
-    from backend.services.consistency import manifest, assign_ids, merge_reports
+    from backend.services.consistency import manifest, assign_ids, merge_reports, same_pipeline
     provenance = manifest(transcript, segments, language, analyzer)
     logger.info("Analysis pipeline %s", provenance)
     full_payload = provider_payload({"language": language, "transcript": units})
@@ -407,8 +455,20 @@ def analyze_transcript(transcript, segments=None, language="en", duration=None, 
         chunks = chunk_units(units, analyzer.budget - 1024)
     logger.info("Semantic analysis: chars=%d, segments=%d, language=%s, chunks=%d",
                 len(transcript), len(segments), language, len(chunks))
+    if checkpoint is None:
+        checkpoint = {}
+    if checkpoint.get("state") != "incomplete" or not same_pipeline(checkpoint.get("manifest"), provenance):
+        checkpoint.clear()
+        checkpoint.update(state="incomplete", manifest=provenance, reports={})
     reports, issues = [], []
     for index, chunk in enumerate(chunks):
+        chunk_key = hashlib.sha256(_json([index, len(chunks), chunk]).encode()).hexdigest()
+        saved = checkpoint["reports"].get(chunk_key)
+        if saved:
+            logger.info("Resuming validated chunk %d/%d without a provider call", index + 1, len(chunks))
+            reports.append(saved["report"])
+            issues.extend(saved["issues"])
+            continue
         raw = analyzer.request({"language": language, "transcript": chunk},
                                "Extract this meeting." if len(chunks) == 1 else
                                f"Extract every supported item from chunk {index + 1}/{len(chunks)}. "
@@ -417,6 +477,9 @@ def analyze_transcript(transcript, segments=None, language="en", duration=None, 
         report, errors = normalize_analysis(raw, local_text, segments, language, duration, source_transcript=transcript)
         reports.append(report)
         issues.extend(errors)
+        checkpoint["reports"][chunk_key] = {"report": report, "issues": errors}
+        if on_checkpoint:
+            on_checkpoint(checkpoint)
     final = merge_reports(reports)
     assign_ids(final, meeting_id)
     final["analysis_manifest"] = provenance

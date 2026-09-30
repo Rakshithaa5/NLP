@@ -25,6 +25,8 @@ async function _handleResponse(res) {
     }
     const error = new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
     error.status = res.status
+    const retryAfter = Number(res.headers.get('Retry-After') ?? 60)
+    error.retryAfter = Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : 60
     throw error
   }
   return res.json()
