@@ -161,7 +161,10 @@ def _detect_status(sentence: str) -> str:
     Check for explicit status signals in the sentence.
     Returns "Completed", "In Progress", "Blocked", or (default) "Pending".
     """
-    # A future task mentioning "completed" is not already completed.
+    # Check explicit state signals before falling back to the workflow default.
+    for pattern, status in _STATUS_MAP.items():
+        if re.search(pattern, sentence, re.IGNORECASE):
+            return status
     return "Pending"
 
 

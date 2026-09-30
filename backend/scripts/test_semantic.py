@@ -60,6 +60,24 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(report["decisions"][0]["decision"], "PostgreSQL is selected.")
         self.assertEqual(report["topics"][0]["label"], "Database selection")
 
+    def test_summary_is_capped_and_rejects_verbatim_or_malformed_points(self):
+        text = "The team agreed to fix authentication before release."
+        raw = response(text)
+        raw["summary"] = [
+            "The team agreed to fix authentication before release.",
+            "The team will prioritize the authentication fix.",
+            "We the way the risks are severe enough to delay release.",
+            "A concise supported outcome was identified.",
+            "Another supported discussion point.",
+            "A supported next step was recorded.",
+            "An extra point should not be shown.",
+        ]
+        raw["summary_evidence"] = [{"evidence": text}] * len(raw["summary"])
+        report, issues = normalize_analysis(raw, text)
+        self.assertEqual(len(report["summary"]), 5)
+        self.assertNotIn(raw["summary"][2], report["summary"])
+        self.assertIn("summary", issues)
+
     def test_no_fabricated_evidence_or_timestamps(self):
         raw = response()
         raw["action_items"] = [{"task": "Send report", "evidence": "Alice will send it.", "timestamp": 42}]
@@ -80,6 +98,31 @@ class SemanticTests(unittest.TestCase):
         self.assertIsNone(action["deadline"])
         self.assertIsNone(action["priority"])
         self.assertEqual(action["timestamp"], 0)
+
+    def test_action_details_are_inferred_per_evidence_span(self):
+        text = "Alice will finish the report by Friday. Bob is working on the slides urgently."
+        raw = response(text)
+        raw["action_items"] = [
+            {"task": "Finish the report", "evidence": "Alice will finish the report by Friday."},
+            {"task": "Work on the slides", "evidence": "Bob is working on the slides urgently."},
+        ]
+        report, _ = normalize_analysis(raw, text)
+        self.assertEqual(report["action_items"][0]["owner"], "Alice")
+        self.assertEqual(report["action_items"][0]["deadline"], "Friday")
+        self.assertEqual(report["action_items"][0]["status"], "Pending")
+        self.assertEqual(report["action_items"][1]["owner"], "Bob")
+        self.assertEqual(report["action_items"][1]["priority"], "high")
+        self.assertEqual(report["action_items"][1]["status"], "In Progress")
+
+    def test_deadline_inference_handles_time_and_milestone_phrases(self):
+        text = "Alice will finish the report by end of week. Bob will prepare slides before release."
+        raw = response(text)
+        raw["action_items"] = [
+            {"task": "Finish the report", "evidence": "Alice will finish the report by end of week."},
+            {"task": "Prepare slides", "evidence": "Bob will prepare slides before release."},
+        ]
+        report, _ = normalize_analysis(raw, text)
+        self.assertEqual([item["deadline"] for item in report["action_items"]], ["end of week", "release"])
 
     def test_confirmation_does_not_erase_named_assignment(self):
         text = "John, prepare the wireframes by Friday. Yes, I'll have them ready."

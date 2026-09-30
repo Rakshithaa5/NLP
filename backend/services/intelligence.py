@@ -125,6 +125,51 @@ def _contains(value, context):
                                     norm(context).casefold()))
 
 
+def _infer_action_detail(detail, evidence, speaker):
+    """Recover a missing action field from its own grounded evidence span."""
+    evidence = norm(evidence)
+    if detail == "owner":
+        if speaker and re.search(r"\b(?:i|we|I'll|we'll|I will|we will)\b", evidence, re.I):
+            return speaker
+        match = re.search(
+            r"\b([A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)\s*,\s*(?:can you|please)\b|"
+            r"\b([A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)\s+(?:will|shall|must|needs? to|is responsible for|is\s+\w+ing)\b",
+            evidence,
+        )
+        return next((value for value in match.groups() if value), None) if match else None
+    if detail == "deadline":
+        match = re.search(
+            r"\b(?:by|before|until|due(?:\s+(?:on|by))?|no later than)\s+"
+            r"((?:the\s+)?(?:end\s+of\s+(?:the\s+)?(?:day|week|month)|"
+            r"EOD|COB|EOM|today|tonight|tomorrow|"
+            r"next\s+(?:\w+)|this\s+(?:\w+)|[A-Za-z]+day|"
+            r"[A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?|"
+            r"release|launch|sprint|milestone))\b",
+            evidence,
+            re.I,
+        )
+        return match.group(1).strip() if match else None
+    if detail == "priority":
+        match = re.search(r"\b(critical|urgent|high|medium|low)\s+priority\b|\b(priority|urgently|asap)\b", evidence, re.I)
+        if not match:
+            return None
+        signal = match.group(1) or match.group(2)
+        return {"critical": "high", "urgent": "high", "urgently": "high", "asap": "high"}.get(signal.casefold(), signal.casefold())
+    return None
+
+
+def _infer_action_status(evidence):
+    evidence = norm(evidence)
+    for pattern, status in (
+        (r"\b(?:done|completed|finished|resolved)\b", "Completed"),
+        (r"\b(?:in\s+progress|ongoing|working\s+on)\b", "In Progress"),
+        (r"\b(?:blocked|on\s+hold|waiting)\b", "Blocked"),
+    ):
+        if re.search(pattern, evidence, re.I):
+            return status
+    return "Pending"
+
+
 def _terms(value):
     value = re.sub(r"\bdocs?\b", "documentation", norm(value).casefold())
     aliases = {"resolve": "fix", "repair": "fix", "bug": "issue", "create": "prepare",
@@ -211,6 +256,7 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
         return matched
 
     summary = raw.get("summary", [])
+    had_summary = bool(summary)
     if isinstance(summary, str):
         summary = [summary]
         issues.append("summary")
@@ -218,9 +264,11 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
         summary = []
         issues.append("summary")
     quotes = rows("summary_evidence")
-    for index, point in enumerate(summary):
+    for index, point in enumerate(summary[:6]):
         evidence = source(quotes[index]) if index < len(quotes) else source(point)
-        if norm(point) and evidence:
+        point_text = norm(point)
+        is_malformed = bool(re.search(r"\b(?:we|the)\s+the\s+way\b", point_text, re.I))
+        if point_text and len(point_text.split()) <= 32 and evidence and not is_malformed:
             if norm(point) not in report.summary:
                 report.summary.append(norm(point))
                 report.summary_evidence.append(Evidence(**evidence))
@@ -267,9 +315,20 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
                                                (detail == "owner" and candidate == evidence["speaker"]))
                     if detail == "priority":
                         supported = candidate in {"high", "medium", "low"} and extra is not None
+                    if not supported:
+                        inferred = _infer_action_detail(detail, supporting, evidence["speaker"])
+                        candidate, supported = inferred or "", bool(inferred)
+                        if supported:
+                            extra = evidence
                     value[detail] = candidate if supported else None
                     value[detail + "_evidence"] = extra["evidence"] if supported and extra else None
-                value["status"] = "Pending"
+                status = norm(item.get("status")).strip().casefold()
+                status_values = {
+                    "pending": "Pending", "completed": "Completed", "done": "Completed",
+                    "in progress": "In Progress", "ongoing": "In Progress",
+                    "blocked": "Blocked", "on hold": "Blocked", "waiting": "Blocked",
+                }
+                value["status"] = status_values.get(status, _infer_action_status(supporting))
             elif model is Question:
                 status = norm(item.get("status")).capitalize()
                 value["status"] = status if status in {"Resolved", "Unresolved"} else "Not assessed"
@@ -324,7 +383,7 @@ def normalize_analysis(raw, transcript, segments=None, language="en", duration=N
             if value and _contains(value, context) and value.casefold() not in seen:
                 seen.add(value.casefold())
                 report.entities[group].append(value)
-    if not report.summary and norm(transcript):
+    if not report.summary and norm(transcript) and not had_summary:
         # Recover useful source excerpts, but mark the response partial.
         from backend.services.summarization import summarize_extractive, _sentence_split
         excerpts = _sentence_split(summarize_extractive(transcript, 6))
