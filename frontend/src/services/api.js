@@ -141,6 +141,16 @@ export async function getAnalysis(fileId) {
   return _handleResponse(res)
 }
 
+/** Ask a question using only the current meeting transcript. */
+export async function askMeeting(fileId, question, history = []) {
+  const res = await fetch(`${BASE}/api/chat/${fileId}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({question, history}),
+  })
+  return _handleResponse(res)
+}
+
 // ── Phase 4 ────────────────────────────────────────────────────────────────────
 
 /**

@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from backend.routes import upload, analysis, report
+from backend.routes import upload, analysis, report, chatbot
 
 app = FastAPI(
     title="Meeting Analyzer API",
@@ -45,6 +45,7 @@ app.add_middleware(
 app.include_router(upload.router,    prefix="/api/upload",   tags=["upload"])
 app.include_router(analysis.router,  prefix="/api/analysis", tags=["analysis"])
 app.include_router(report.router,    prefix="/api/report",   tags=["report"])
+app.include_router(chatbot.router,  prefix="/api/chat",     tags=["chatbot"])
 
 
 # ── Health checks ────────────────────────────────────────────────────────────

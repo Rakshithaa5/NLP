@@ -6,10 +6,12 @@ import Overview from '../components/meeting/Overview'
 import TranscriptViewer from '../components/meeting/TranscriptViewer'
 import Analytics from '../components/meeting/Analytics'
 import MeetingPlayer from '../components/meeting/MeetingPlayer'
+import AskThisMeeting from '../components/meeting/AskThisMeeting'
 import { normalizeAnalysis, normalizeMeeting } from '../components/meeting/data'
 import { resolveEvidenceTarget } from '../components/meeting/playback'
 import '../components/meeting/meeting.css'
 import '../components/meeting/playback.css'
+import '../components/meeting/chatbot.css'
 
 export default function Dashboard() {
   const {fileId} = useParams()
@@ -119,6 +121,7 @@ function MeetingDashboard({fileId}) {
   return <div className="mi-dashboard"><Link className="mi-back" to="/history">&#8592; Meeting history</Link>
     <MeetingHeader meeting={meeting} busy={busy} analyzeDisabled={analysisDisabled} exporting={exporting} hasAnalysis={!!analysis} onAnalyze={runAnalysis} onExport={download}/>
     {fileId && <MeetingPlayer fileId={fileId} meeting={meeting} onActiveSegmentChange={setActiveSegmentId} seekRequest={seekRequest} onSeekHandled={() => setSeekRequest(null)}/>} 
+    {!loading && fileId && <AskThisMeeting fileId={fileId} meeting={meeting} onJump={jump}/>} 
     {error && <div role="alert" className="mi-notice mi-error">{error} {retrySeconds > 0 && <span role="status">Retry available in {retrySeconds}s. </span>}{errorSource === 'loading' && <button onClick={retry}>Retry loading</button>}{errorSource === 'analysis' && <button disabled={analysisDisabled} onClick={runAnalysis}>Retry analysis</button>}{errorSource === 'export' && <button disabled={exporting} onClick={download}>Retry export</button>}</div>}
     {transcriptError && <div role="alert" className="mi-notice">Transcript unavailable: {transcriptError} <button onClick={retry}>Retry</button></div>}
     {busy && <div role="status" className="mi-notice">Analysing the transcript. Your existing report remains available while this runs.</div>}
