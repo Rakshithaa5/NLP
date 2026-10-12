@@ -30,13 +30,27 @@ app = FastAPI(
 )
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
-origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+# In development the Vite proxy rewrites the Origin, but direct XHR calls
+# (e.g. XMLHttpRequest used for upload progress) still send the browser Origin.
+# We accept all localhost origins so preflight OPTIONS requests succeed.
+import re as _re
+
+_RAW_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").strip()
+_ORIGIN_LIST = [o.strip() for o in _RAW_ORIGINS.split(",") if o.strip()] if _RAW_ORIGINS else []
+
+def _origin_allowed(origin: str) -> bool:
+    # Explicit allowlist takes priority
+    if origin in _ORIGIN_LIST:
+        return True
+    # Development: allow any localhost/127.0.0.1 origin on any port
+    return bool(_re.match(r"https?://(localhost|127\.0\.0\.1)(:\d+)?$", origin))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=_ORIGIN_LIST or ["http://localhost:5173"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["Retry-After"],
 )

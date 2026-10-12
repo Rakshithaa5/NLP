@@ -1,16 +1,15 @@
-/**
- * components/NavBar.jsx — Top navigation bar.
- *
- * Phase 4: History link added, active-route styling, Phase 4 complete.
+﻿/**
+ * components/NavBar.jsx -- replaced by Topbar component.
+ * This file now re-exports the Topbar for backward compatibility.
+ * The actual topbar UI is in Topbar.jsx.
  */
-
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { checkHealth } from '../services/api'
 
 export default function NavBar() {
   const location = useLocation()
-  const [healthy, setHealthy] = useState(null)  // null = checking, true = ok, false = down
+  const [healthy, setHealthy] = useState(null)
 
   useEffect(() => {
     checkHealth()
@@ -19,39 +18,25 @@ export default function NavBar() {
   }, [])
 
   const navLinks = [
-    { to: '/',        label: '⬆ Upload',  id: 'nav-upload'  },
-    { to: '/history', label: '🕐 History', id: 'nav-history' },
+    { to: '/', label: 'Upload', id: 'nav-upload' },
+    { to: '/history', label: 'All Meetings', id: 'nav-history' },
   ]
 
   return (
-    <nav style={{
-      position: 'sticky', top: 0, zIndex: 100,
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '12px 28px',
-      background: 'rgba(8, 13, 26, 0.85)',
-      backdropFilter: 'blur(16px)',
-      WebkitBackdropFilter: 'blur(16px)',
-      borderBottom: '1px solid var(--clr-border)',
-    }}>
-      {/* Brand */}
-      <Link to="/" id="nav-brand" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
-        <div style={{
-          width: 34, height: 34,
-          borderRadius: 10,
-          background: 'var(--grad-brand)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 800, color: '#fff', fontSize: 13,
-          boxShadow: 'var(--glow-primary)',
-        }}>
-          MA
+    <nav className="topbar" role="navigation" aria-label="Main navigation">
+      <Link to="/" id="nav-brand" className="topbar-brand">
+        <div className="topbar-logo" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
         </div>
-        <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--clr-text)', letterSpacing: '-0.01em' }}>
-          Meeting Analyzer
-        </span>
+        <span className="topbar-name">Meeting Intelligence</span>
       </Link>
 
-      {/* Nav links */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div className="topbar-nav">
         {navLinks.map(link => {
           const isActive = location.pathname === link.to ||
             (link.to !== '/' && location.pathname.startsWith(link.to))
@@ -60,34 +45,24 @@ export default function NavBar() {
               key={link.to}
               to={link.to}
               id={link.id}
-              style={{
-                padding: '7px 16px',
-                borderRadius: 'var(--radius-sm)',
-                fontWeight: isActive ? 600 : 400,
-                fontSize: 14,
-                color: isActive ? 'var(--clr-text)' : 'var(--clr-text-muted)',
-                background: isActive ? 'var(--clr-surface-2)' : 'transparent',
-                textDecoration: 'none',
-                transition: 'all var(--transition)',
-              }}
+              className={`topbar-link${isActive ? ' active' : ''}`}
             >
               {link.label}
             </Link>
           )
         })}
-
-        {/* Health status dot */}
         <div
           id="health-indicator"
-          title={healthy === null ? 'Checking backend…' : healthy ? 'Backend online' : 'Backend offline'}
+          title={healthy === null ? 'Checking backend...' : healthy ? 'Backend online' : 'Backend offline'}
           style={{
-            width: 8, height: 8,
-            borderRadius: '50%',
+            width: 8, height: 8, borderRadius: '50%', marginLeft: 12,
             background: healthy === null ? 'var(--clr-warn)' : healthy ? 'var(--clr-success)' : 'var(--clr-error)',
-            marginLeft: 12,
-            boxShadow: `0 0 6px ${healthy ? 'var(--clr-success)' : healthy === false ? 'var(--clr-error)' : 'var(--clr-warn)'}`,
+            boxShadow: `0 0 0 2px ${healthy ? 'rgba(22,163,74,0.2)' : healthy === false ? 'rgba(220,38,38,0.2)' : 'rgba(217,119,6,0.2)'}`,
             transition: 'background 0.5s',
+            flexShrink: 0,
           }}
+          aria-label={healthy === null ? 'Checking backend' : healthy ? 'Backend online' : 'Backend offline'}
+          role="status"
         />
       </div>
     </nav>
