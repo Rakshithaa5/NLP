@@ -19,6 +19,10 @@ class AnalysisError(RuntimeError):
     """A failed analysis is never a successful empty report."""
 
 
+class OutputLimitError(AnalysisError):
+    """Generation exhausted its output budget; retry smaller source chunks."""
+
+
 class ProviderError(AnalysisError):
     """Safe, actionable provider failure for the API response."""
 
@@ -306,14 +310,14 @@ class GroqAnalyzer:
             except HTTPError as exc:
                 # Providers may echo transcripts in bodies; log only status.
                 delay = retry_delay(exc.headers, 60 if exc.code == 429 else 2)
-                if exc.code in {429, 502, 503, 504} and self.retries_left:
-                    if 0 <= delay <= 15 and delay + 5 < self.deadline - time.monotonic():
+                limit_kind = rate_limit_kind(exc) if exc.code == 429 else None
+                if exc.code in {429, 500, 502, 503, 504} and limit_kind not in {"TPD", "RPD"} and self.retries_left:
+                    if 0 <= delay <= 60 and delay + 5 < self.deadline - time.monotonic():
                         self.retries_left -= 1
                         logger.warning("Groq HTTP %s; retrying once in %.1fs", exc.code, delay)
                         exc.close()
                         time.sleep(delay)
                         continue
-                limit_kind = rate_limit_kind(exc) if exc.code == 429 else None
                 if exc.code == 429:
                     logger.warning("Groq quota kind=%s retry_after=%s limits=%s", limit_kind, delay,
                                    {k: exc.headers.get(k) for k in ("x-ratelimit-limit-tokens",
@@ -331,12 +335,18 @@ class GroqAnalyzer:
                 }
                 raise ProviderError(messages.get(exc.code, f"Groq returned HTTP {exc.code}. Analysis could not complete.")) from exc
             except (URLError, TimeoutError, OSError, ValueError) as exc:
+                if self.retries_left and self.deadline - time.monotonic() > 5:
+                    self.retries_left -= 1
+                    time.sleep(1)
+                    continue
                 raise AnalysisError(f"Groq request failed ({type(exc).__name__})") from exc
         try:
             choice = response_body["choices"][0]
             logger.info("Groq response finish_reason=%s usage=%s fingerprint=%s max_output_tokens=%s",
                         choice.get("finish_reason"), response_body.get("usage"),
                         response_body.get("system_fingerprint"), self.output_tokens)
+            if choice.get("finish_reason") == "length":
+                raise OutputLimitError("Model response incomplete: output limit reached")
             if choice.get("finish_reason") != "stop":
                 raise AnalysisError("Model response incomplete: " + str(choice.get("finish_reason")))
             if choice["message"].get("refusal"):
@@ -461,25 +471,64 @@ def analyze_transcript(transcript, segments=None, language="en", duration=None, 
         checkpoint.clear()
         checkpoint.update(state="incomplete", manifest=provenance, reports={})
     reports, issues = [], []
-    for index, chunk in enumerate(chunks):
-        chunk_key = hashlib.sha256(_json([index, len(chunks), chunk]).encode()).hexdigest()
+
+    def extract_chunk(chunk, depth=0, instruction=None):
+        # Content keys preserve successful recovery chunks across retries.
+        chunk_key = hashlib.sha256(_json(chunk).encode()).hexdigest()
         saved = checkpoint["reports"].get(chunk_key)
         if saved:
-            logger.info("Resuming validated chunk %d/%d without a provider call", index + 1, len(chunks))
-            reports.append(saved["report"])
-            issues.extend(saved["issues"])
-            continue
-        raw = analyzer.request({"language": language, "transcript": chunk},
-                               "Extract this meeting." if len(chunks) == 1 else
-                               f"Extract every supported item from chunk {index + 1}/{len(chunks)}. "
-                               "Do not infer what happens in unseen chunks.")
-        local_text = " ".join(unit["text"] for unit in chunk)
-        report, errors = normalize_analysis(raw, local_text, segments, language, duration, source_transcript=transcript)
-        reports.append(report)
-        issues.extend(errors)
+            return saved["report"], saved["issues"]
+        try:
+            if chunk_key in checkpoint.get("split_chunks", []):
+                raise OutputLimitError("Resume smaller chunks")
+            raw = analyzer.request({"language": language, "transcript": chunk},
+                                   instruction or "Extract every supported item from this meeting excerpt. "
+                                   "Do not infer what happens in unseen chunks.")
+        except OutputLimitError:
+            if depth >= 4:
+                raise
+            if len(chunk) > 1:
+                middle = len(chunk) // 2
+                smaller = [chunk[:middle], chunk[middle:]]
+            else:
+                text = chunk[0]["text"]
+                if len(text) < 200:
+                    raise
+                middle = len(text) // 2
+                boundary = text.rfind(" ", middle // 2, middle)
+                middle = boundary + 1 if boundary >= 0 else middle
+                smaller = [[{**chunk[0], "text": text[:middle]}],
+                           [{**chunk[0], "text": text[middle:]}]]
+            if chunk_key not in checkpoint.setdefault("split_chunks", []):
+                checkpoint["split_chunks"].append(chunk_key)
+                if on_checkpoint:
+                    on_checkpoint(checkpoint)
+            logger.info("Output limit reached; extracting two smaller chunks (depth=%d)", depth + 1)
+            children = [extract_chunk(part, depth + 1) for part in smaller]
+            report = merge_reports([child[0] for child in children])
+            errors = sorted({issue for child in children for issue in child[1]})
+        else:
+            local_text = " ".join(unit["text"] for unit in chunk)
+            report, errors = normalize_analysis(raw, local_text, segments, language, duration,
+                                                source_transcript=transcript)
         checkpoint["reports"][chunk_key] = {"report": report, "issues": errors}
         if on_checkpoint:
             on_checkpoint(checkpoint)
+        return report, errors
+
+    for index, chunk in enumerate(chunks):
+        # Preserve completed chunks from checkpoints created before recovery support.
+        old_key = hashlib.sha256(_json([index, len(chunks), chunk]).encode()).hexdigest()
+        old_saved = checkpoint["reports"].get(old_key)
+        if old_saved:
+            report, errors = old_saved["report"], old_saved["issues"]
+        else:
+            instruction = ("Extract this meeting." if len(chunks) == 1 else
+                           f"Extract every supported item from chunk {index + 1}/{len(chunks)}. "
+                           "Do not infer what happens in unseen chunks.")
+            report, errors = extract_chunk(chunk, instruction=instruction)
+        reports.append(report)
+        issues.extend(errors)
     final = merge_reports(reports)
     assign_ids(final, meeting_id)
     final["analysis_manifest"] = provenance

@@ -220,7 +220,7 @@ class SemanticTests(unittest.TestCase):
     def test_long_rate_limit_and_expired_budget_do_not_wait(self):
         from urllib.error import HTTPError
         from backend.services.semantic import ProviderError
-        error = HTTPError("https://example.test", 429, "rate limit", {"Retry-After": "60"}, None)
+        error = HTTPError("https://example.test", 429, "rate limit", {"Retry-After": "120"}, None)
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-only"}), patch(
                 "backend.services.semantic.urlopen", side_effect=error) as call, patch(
                 "backend.services.semantic.time.sleep") as sleep:

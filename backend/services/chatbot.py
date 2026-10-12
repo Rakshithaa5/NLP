@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from backend.services.semantic import retry_delay, rate_limit_kind
 from urllib.error import HTTPError, URLError
@@ -119,32 +120,57 @@ class ChatbotClient:
             ],
             "response_format": {"type": "json_object"},
             "temperature": 0,
-            "max_completion_tokens": int(os.getenv("GROQ_CHATBOT_MAX_OUTPUT_TOKENS", "512")),
+            "max_completion_tokens": int(os.getenv("GROQ_CHATBOT_MAX_OUTPUT_TOKENS", "2048")),
         }
         if self.model.startswith("openai/gpt-oss"):
             payload["reasoning_effort"] = "low"
-        request = Request(self.base_url + "/chat/completions", data=_json(payload).encode("utf-8"),
-                          headers={"Authorization": "Bearer " + self.api_key, "Content-Type": "application/json",
-                                   "Accept": "application/json", "User-Agent": "MeetingAnalyzer/1.0"}, method="POST")
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                body = json.load(response)
-        except HTTPError as exc:
-            if exc.code == 429:
-                raise ChatbotRateLimitError(retry_delay(exc.headers), rate_limit_kind(exc)) from exc
-            if exc.code == 401:
-                raise ChatbotError("Groq rejected GROQ_CHATBOT_API_KEY. Update the chatbot key and restart the backend.") from exc
-            if exc.code == 403:
-                raise ChatbotError("Groq denied access to the chatbot request (HTTP 403). Check account/model permissions or network filtering; this does not necessarily mean the API key is invalid.") from exc
-            logger.warning("Chatbot provider failed with HTTP %s", exc.code)
-            raise ChatbotError("The meeting chatbot is temporarily unavailable.") from exc
-        except (URLError, TimeoutError, OSError, ValueError) as exc:
-            raise ChatbotError("The meeting chatbot is temporarily unavailable.") from exc
-        try:
-            content = body["choices"][0]["message"]["content"]
-            result = json.loads(content)
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise ChatbotError("The meeting chatbot returned an invalid response.") from exc
+        deadline = time.monotonic() + float(os.getenv("GROQ_CHATBOT_TOTAL_TIMEOUT_SECONDS", "90"))
+        for attempt in range(3):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ChatbotError("The meeting chatbot exceeded its time budget. Please retry.")
+            request = Request(self.base_url + "/chat/completions", data=_json(payload).encode("utf-8"),
+                              headers={"Authorization": "Bearer " + self.api_key, "Content-Type": "application/json",
+                                       "Accept": "application/json", "User-Agent": "MeetingAnalyzer/1.0"}, method="POST")
+            try:
+                with urlopen(request, timeout=min(self.timeout, remaining)) as response:
+                    body = json.load(response)
+            except HTTPError as exc:
+                delay = retry_delay(exc.headers, 60 if exc.code == 429 else 2)
+                kind = rate_limit_kind(exc) if exc.code == 429 else None
+                exc.close()
+                if (attempt < 2 and exc.code in {429, 500, 502, 503, 504}
+                        and kind not in {"TPD", "RPD"} and delay <= 60
+                        and delay + 5 < deadline - time.monotonic()):
+                    time.sleep(delay)
+                    continue
+                if exc.code == 429:
+                    raise ChatbotRateLimitError(delay, kind) from exc
+                if exc.code == 401:
+                    raise ChatbotError("Groq rejected GROQ_CHATBOT_API_KEY. Update the chatbot key and restart the backend.") from exc
+                if exc.code == 403:
+                    raise ChatbotError("Groq denied access to the chatbot request (HTTP 403). Check account/model permissions or network filtering; this does not necessarily mean the API key is invalid.") from exc
+                logger.warning("Chatbot provider failed with HTTP %s", exc.code)
+                raise ChatbotError("The meeting chatbot is temporarily unavailable.") from exc
+            except (URLError, TimeoutError, OSError, ValueError) as exc:
+                if attempt < 2 and deadline - time.monotonic() > 5:
+                    time.sleep(1)
+                    continue
+                raise ChatbotError("The meeting chatbot is temporarily unavailable.") from exc
+            try:
+                choice = body["choices"][0]
+                if choice.get("finish_reason") == "length":
+                    ceiling = int(os.getenv("GROQ_CHATBOT_MAX_RECOVERY_TOKENS", "8192"))
+                    if attempt < 2 and payload["max_completion_tokens"] < ceiling:
+                        payload["max_completion_tokens"] = min(ceiling, payload["max_completion_tokens"] * 2)
+                        continue
+                    raise ChatbotError("The chatbot answer exceeded its output limit. Please ask a more focused question.")
+                if choice.get("finish_reason") not in {None, "stop"} or choice["message"].get("refusal"):
+                    raise ChatbotError("The meeting chatbot could not complete its answer.")
+                result = json.loads(choice["message"]["content"])
+            except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
+                raise ChatbotError("The meeting chatbot returned an invalid response.") from exc
+            break
         if not isinstance(result, dict):
             raise ChatbotError("The meeting chatbot returned an invalid response.")
         answer = result.get("answer")
