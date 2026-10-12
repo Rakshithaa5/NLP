@@ -173,6 +173,46 @@ export async function exportPdf(fileId) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+// ── Topic Segmentation ──────────────────────────────────────────────────────
+
+/**
+ * Run topic segmentation for a meeting.
+ * @param {string} fileId
+ * @param {boolean} force  Re-run even if cached result exists.
+ */
+export async function runTopicSegmentation(fileId, force = false) {
+  const res = await fetch(`${BASE}/api/topics/${fileId}?force=${force}`, { method: 'POST' })
+  return _handleResponse(res)
+}
+
+/**
+ * Retrieve saved topic segmentation result.
+ * @param {string} fileId
+ */
+export async function getTopicSegmentation(fileId) {
+  const res = await fetch(`${BASE}/api/topics/${fileId}`)
+  return _handleResponse(res)
+}
+
+/**
+ * Retrieve topic evolution for a single meeting.
+ * @param {string} fileId
+ */
+export async function getTopicEvolution(fileId) {
+  const res = await fetch(`${BASE}/api/topics/${fileId}/evolution`)
+  return _handleResponse(res)
+}
+
+/**
+ * Compare topics across multiple meetings.
+ * @param {string[]} [meetingIds]  Optional list of meeting IDs to compare.
+ */
+export async function getCrossMeetingTopics(meetingIds = []) {
+  const param = meetingIds.length ? `?meeting_ids=${meetingIds.join(',')}` : ''
+  const res = await fetch(`${BASE}/api/topics/cross-meeting/compare${param}`)
+  return _handleResponse(res)
+}
+
 // ── Health ────────────────────────────────────────────────────────────────────
 
 /**

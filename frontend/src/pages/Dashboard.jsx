@@ -17,6 +17,7 @@ import TranscriptViewer from '../components/meeting/TranscriptViewer'
 import Analytics from '../components/meeting/Analytics'
 import MeetingPlayer from '../components/meeting/MeetingPlayer'
 import AskThisMeeting from '../components/meeting/AskThisMeeting'
+import TopicExplorer from '../components/meeting/TopicExplorer'
 import { normalizeAnalysis, normalizeMeeting } from '../components/meeting/data'
 import { resolveEvidenceTarget } from '../components/meeting/playback'
 import '../components/meeting/meeting.css'
@@ -29,6 +30,7 @@ function MeetingSidebar({ fileId, tab, activate }) {
     { id: 'overview',   label: 'Overview',   icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> },
     { id: 'transcript', label: 'Transcript',  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> },
     { id: 'analytics',  label: 'Analytics',  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6"  y1="20" x2="6"  y2="14"/></svg> },
+    { id: 'topics',     label: 'Topics',     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg> },
   ]
   return (
     <aside className="sidebar">
@@ -92,7 +94,7 @@ export default function Dashboard() {
 function MeetingDashboard({ fileId }) {
   const [params, setParams] = useSearchParams()
   const requested = params.get('tab')
-  const tab = ['overview','transcript','analytics'].includes(requested) ? requested : 'overview'
+  const tab = ['overview','transcript','analytics','topics'].includes(requested) ? requested : 'overview'
 
   const [analysis, setAnalysis]   = useState(null)
   const [meeting, setMeeting]     = useState(normalizeMeeting(null))
@@ -264,7 +266,7 @@ function MeetingDashboard({ fileId }) {
               ))}
 
               <div className="mi-tabs" role="tablist" aria-label="Meeting views">
-                {['overview','transcript','analytics'].map((value, index, tabs) => (
+                {['overview','transcript','analytics','topics'].map((value, index, tabs) => (
                   <button
                     role="tab" id={`tab-${value}`}
                     aria-controls={`panel-${value}`} aria-selected={tab === value}
@@ -309,6 +311,7 @@ function MeetingDashboard({ fileId }) {
                   />
                 )}
                 {tab === 'analytics' && <Analytics analysis={data} meeting={meeting} />}
+                {tab === 'topics' && <TopicExplorer fileId={fileId} onJump={jump} />}
               </div>
             </>
           )}
