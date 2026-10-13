@@ -213,6 +213,38 @@ export async function getCrossMeetingTopics(meetingIds = []) {
   return _handleResponse(res)
 }
 
+// ── Diarization ─────────────────────────────────────────────────────────────
+
+/**
+ * Retrieve saved diarization result for a meeting.
+ * Returns {state: 'none'} if diarization has never been run.
+ */
+export async function getDiarization(fileId) {
+  const res = await fetch(`${BASE}/api/diarization/${fileId}`)
+  return _handleResponse(res)
+}
+
+/**
+ * Run (or re-run) speaker diarization for a meeting.
+ * Does NOT re-transcribe or re-analyse.
+ */
+export async function runDiarization(fileId, force = false) {
+  const res = await fetch(`${BASE}/api/diarization/${fileId}?force=${force}`, { method: 'POST' })
+  return _handleResponse(res)
+}
+
+/**
+ * Rename a speaker display name without changing the stable speaker ID.
+ */
+export async function renameSpeaker(fileId, speakerId, displayName) {
+  const res = await fetch(`${BASE}/api/diarization/${fileId}/rename`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ speaker_id: speakerId, display_name: displayName }),
+  })
+  return _handleResponse(res)
+}
+
 // ── Health ────────────────────────────────────────────────────────────────────
 
 /**

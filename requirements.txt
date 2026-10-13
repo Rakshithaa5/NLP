@@ -7,6 +7,7 @@ python-dotenv>=1.0.0
 # ── Audio / Speech ────────────────────────────────────────────────────────────
 faster-whisper>=1.0.0
 av>=12.0.0                    # required by faster-whisper for audio decoding
+soundfile>=0.12.0             # WAV loading for diarization (no torchcodec/FFmpeg DLLs needed)
 
 # ── NLP ───────────────────────────────────────────────────────────────────────
 spacy>=3.7.0

@@ -16,11 +16,22 @@ function Highlight({value, query}) {
   parts.push(value.slice(cursor))
   return parts
 }
-export default function TranscriptViewer({meeting, intelligence, target, activeSegmentId, selectedEvidenceSegmentIds = [], onSeek, onSegmentSelect}) {
+export default function TranscriptViewer({meeting, intelligence, target, activeSegmentId, selectedEvidenceSegmentIds = [], onSeek, onSegmentSelect, diarizationSegments = null, showSpeakerLabels = true}) {
   const [query, setQuery] = useState(''), [speaker, setSpeaker] = useState(''), [filter, setFilter] = useState('All')
   const [autoFollow, setAutoFollow] = useState(true)
   const container = useRef(null)
-  const segments = meeting.segments.length ? meeting.segments : meeting.full_text ? [{id: 0, text: meeting.full_text, start: null, speaker: null}] : []
+
+  // Merge diarization speaker data into segments when available and labels are on
+  const baseSegments = meeting.segments.length ? meeting.segments : meeting.full_text ? [{id: 0, text: meeting.full_text, start: null, speaker: null}] : []
+  const diarMap = diarizationSegments && showSpeakerLabels
+    ? new Map(diarizationSegments.map(s => [s.id ?? s.start, s]))
+    : null
+  const segments = diarMap
+    ? baseSegments.map(s => {
+        const d = diarMap.get(s.id) ?? diarMap.get(s.start)
+        return d ? { ...s, speaker: d.speaker_name || d.speaker_id || s.speaker } : s
+      })
+    : baseSegments
   const speakers = [...new Set(segments.map(s => s.speaker).filter(Boolean))]
   const labels = new Map()
   for (const [key, label] of [['action_items', 'Actions'], ['decisions', 'Decisions'], ['questions', 'Questions']]) {
