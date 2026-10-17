@@ -224,3 +224,12 @@ export async function checkHealth() {
   if (!res.ok) throw new Error('Backend unreachable')
   return res.json()
 }
+
+export async function updateActionDetails(fileId, index, details) {
+  const res = await fetch(`${BASE}/api/analysis/${fileId}/action-items/${index}`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(details),
+  })
+  return _handleResponse(res)
+}

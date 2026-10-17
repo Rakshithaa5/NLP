@@ -20,3 +20,24 @@
   .mi-chat-form button { padding-inline: 12px; }
   .mi-chat-message { max-width: 100%; }
 }
+
+.mi-assistant { position: fixed; right: 24px; bottom: max(24px, env(safe-area-inset-bottom)); z-index: 80; }
+.mi-assistant-launcher { display: flex; align-items: center; justify-content: center; width: 58px; height: 58px; margin-left: auto; border: 0; border-radius: 50%; background: var(--clr-primary); color: white; box-shadow: 0 6px 24px rgba(0,0,0,.18); cursor: pointer; }
+.mi-assistant-launcher:hover { background: var(--clr-primary-h); }
+.mi-assistant-launcher:focus-visible, .mi-assistant-close:focus-visible { outline: 3px solid var(--clr-primary); outline-offset: 4px; }
+.mi-assistant-window { display: flex; flex-direction: column; width: min(400px, calc(100vw - 32px)); max-height: min(620px, calc(100dvh - 112px)); margin-bottom: 12px; border: 1px solid var(--clr-border); border-radius: 20px; background: var(--clr-surface); box-shadow: 0 16px 56px rgba(0,0,0,.18); overflow: hidden; }
+.mi-assistant-window[hidden] { display: none; }
+.mi-assistant-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid var(--clr-border); flex-shrink: 0; }
+.mi-assistant-header h2 { font-size: 18px; margin: 4px 0 0; }
+.mi-assistant-close { background: transparent; border: 0; font-size: 28px; color: var(--clr-text-2); cursor: pointer; padding: 4px 10px; }
+.mi-assistant-body { padding: 16px 20px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.mi-assistant-body > p { margin-bottom: 16px; }
+.mi-assistant-window .mi-chat-messages { max-height: 300px; }
+.mi-assistant-window .mi-chat-user { align-self: flex-end; }
+.mi-assistant-window .mi-chat-form { padding: 14px; border-top: 1px solid var(--clr-border); flex-shrink: 0; }
+.mi-assistant-window .mi-chat-form input { min-width: 0; width: 100%; }
+.mi-assistant-window .mi-chat-error { margin: 8px 14px; overflow-y: auto; }
+@media (max-width: 600px) {
+  .mi-assistant { right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); }
+  .mi-assistant-window { max-height: calc(100dvh - 104px); }
+}

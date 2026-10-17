@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, ConfigDict
 
 from backend.services.semantic import analyze_transcript, ProviderError, RateLimitError, GroqAnalyzer, transcript_units
 from backend.services.consistency import manifest, same_pipeline, reconcile
@@ -152,6 +153,15 @@ def _analyze_locked(file_id, force):
             save_local(file_id, "analysis_previous.json", previous)
         save_local(file_id, "analysis_candidate.json", result)
         result = reconcile(previous, result, transcript, segments, file_id)
+        # Carry user details forward only when the task and its evidence still match.
+        old_items = ((previous or {}).get("intelligence") or {}).get("action_items", [])
+        for item in result.get("intelligence", {}).get("action_items", []):
+            matches = [old for old in old_items if old.get("manually_edited")
+                       and old.get("task") == item.get("task")
+                       and old.get("evidence") == item.get("evidence")]
+            if len(matches) == 1:
+                item.update({key: matches[0].get(key) for key in ("owner", "deadline", "manually_edited")})
+        result["topics"]["intelligence"] = result["intelligence"]
         result.update(file_id=file_id, analyzed_at=datetime.now(timezone.utc).isoformat())
         _persist_analysis(file_id, result)
         # A completed explicit re-analysis starts a fresh attempt next time.
@@ -187,3 +197,38 @@ async def get_analysis(file_id: str):
             raise HTTPException(status_code=502, detail=FAILURE_MESSAGE)
         raise HTTPException(status_code=404, detail="No analysis yet. Analyze this meeting first.")
     return JSONResponse(content={**stored, "file_id": file_id, "analysis_attempt": attempt})
+
+
+class ActionDetailsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    owner: str = Field(max_length=200)
+    deadline: str = Field(max_length=200)
+    task: str = Field(min_length=1)
+    analyzed_at: str
+
+
+@router.patch("/{file_id}/action-items/{index}", summary="Edit action owner and deadline")
+def update_action_details(file_id: str, index: int, update: ActionDetailsUpdate):
+    _valid_id(file_id)
+    try:
+        with analysis_lock(file_id):
+            stored = _fetch_stored_analysis(file_id)
+            if stored is None:
+                raise HTTPException(404, "Meeting analysis not found")
+            intelligence = stored.get("intelligence") or (stored.get("topics") or {}).get("intelligence") or {}
+            items = intelligence.get("action_items", [])
+            if index < 0 or index >= len(items):
+                raise HTTPException(404, "Action item not found")
+            item = items[index]
+            if stored.get("analyzed_at", "") != update.analyzed_at or item.get("task") != update.task:
+                raise HTTPException(409, "Analysis changed. Refresh before editing this action.")
+            item.update(owner=update.owner.strip() or None, deadline=update.deadline.strip() or None,
+                        manually_edited=True)
+            stored["intelligence"] = intelligence
+            stored.setdefault("topics", {})["intelligence"] = intelligence
+            _persist_analysis(file_id, stored)
+            return {"item": item}
+    except AnalysisInProgress as exc:
+        raise HTTPException(409, "Analysis is running. Try saving again when it finishes.") from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, "Changes could not be saved. Please retry.") from exc

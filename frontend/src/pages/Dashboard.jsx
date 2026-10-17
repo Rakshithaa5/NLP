@@ -10,7 +10,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { getAnalysis, getTranscript, analyzeMeeting, exportPdf } from '../services/api'
+import { getAnalysis, getTranscript, analyzeMeeting, exportPdf, updateActionDetails } from '../services/api'
 import MeetingHeader from '../components/meeting/MeetingHeader'
 import Overview from '../components/meeting/Overview'
 import TranscriptViewer from '../components/meeting/TranscriptViewer'
@@ -160,6 +160,16 @@ function MeetingDashboard({ fileId }) {
     finally { setBusy(false) }
   }
 
+  async function saveAction(index, details) {
+    const result = await updateActionDetails(fileId, index, {
+      ...details, task: analysis.intelligence.action_items[index].task,
+      analyzed_at: analysis.analyzed_at || '',
+    })
+    setAnalysis(current => ({...current, intelligence: {...current.intelligence,
+      action_items: current.intelligence.action_items.map((item, i) => i === index ? result.item : item),
+    }}))
+  }
+
   async function download() {
     setExporting(true); setError('')
     try { await exportPdf(fileId) }
@@ -298,7 +308,7 @@ function MeetingDashboard({ fileId }) {
                       </button>
                     </section>
                   ) : (
-                    <Overview analysis={data} segments={displaySegments} onJump={jump} />
+                    <Overview analysis={data} segments={displaySegments} onJump={jump} onSaveAction={saveAction} editingDisabled={busy} />
                   )
                 )}
                 {tab === 'transcript' && (

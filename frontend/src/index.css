@@ -178,7 +178,7 @@ h1,h2,h3,h4,h5,h6 { font-family: "Plus Jakarta Sans","Inter",sans-serif; line-he
 .mi-action:first-child { border-top: none; padding-top: 0; }
 .mi-item-index { color: var(--clr-text-dim); font-size: 12px; padding-top: 3px; font-variant-numeric: tabular-nums; min-width: 24px; }
 .mi-action-body { flex: 1; min-width: 0; }
-.mi-action-meta { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin: 12px 0 8px; }
+.mi-action-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0 8px; }
 .mi-action-meta dt, .mi-stats-list dt { font-size: 10px; color: var(--clr-text-dim); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
 .mi-action-meta dd { font-size: 12px; margin: 0; font-weight: 500; color: var(--clr-text-2); }
 
@@ -291,3 +291,8 @@ h1,h2,h3,h4,h5,h6 { font-family: "Plus Jakarta Sans","Inter",sans-serif; line-he
   .page-container, .page-container-sm { padding: 24px 16px 60px; }
   .topbar { padding: 0 16px; }
 }
+
+.mi-action-editor { display: grid; gap: 10px; margin: 12px 0; max-width: 520px; }
+.mi-action-editor label { display: grid; gap: 5px; font-size: 12px; }
+.mi-action-editor input { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--clr-border); border-radius: 6px; background: var(--clr-bg, white); color: var(--clr-text); }
+.mi-action-editor-buttons { display: flex; gap: 8px; }
