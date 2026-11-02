@@ -10,7 +10,7 @@ body {font-size:14px}
 
 .workspace-shell {display:flex;min-height:100vh}
 .workspace-content {flex:1;min-width:0}
-.sidebar {background:#F3F5EF}
+.sidebar {background:#F3F5EF;position:sticky;top:0;height:100vh;overflow-y:auto;flex-shrink:0}
 .sidebar-header {padding:28px 18px;border:0;align-items:flex-start}
 .sidebar-logo {width:32px;height:36px;color:white;border-radius:9px;transform:rotate(-4deg)}
 .sidebar-name {font-size:18px;letter-spacing:-.7px}
@@ -88,7 +88,7 @@ body {font-size:14px}
 .mi-topic-list article {background:#EDF4EC}
 .mi-topic-list article:nth-child(3n+2) {background:#EDF2F6}
 .mi-topic-list article:nth-child(3n) {background:#FAEEE5}
-.mi-overview-nav {position:static;margin:0 0 20px;border:0;background:transparent;padding:0;gap:2px}
+.mi-overview-nav {position:sticky;top:56px;z-index:10;margin:0 0 20px;border:0;background:var(--clr-bg);padding:8px 0;gap:2px;border-bottom:1px solid var(--clr-border)}
 .mi-overview-nav a {padding:9px 10px;font-size:12px}
 .mi-overview-nav a[aria-current] {background:var(--clr-primary-bg)}
 .mi-tabs {max-width:100%;background:transparent;border-bottom:1px solid var(--clr-border);border-radius:0;padding:0 0 10px;width:100%;gap:6px}
@@ -106,19 +106,14 @@ body {font-size:14px}
 .meeting-row {box-shadow:none}
 .mi-player {padding:20px;min-width:0}
 .mi-player-shell {min-width:0}
-.report-overview {display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:20px;align-items:start}
+.report-overview {display:block}
 .report-overview>div[role=tabpanel],.report-overview .mi-overview,.report-overview .overview-insights,.report-overview .overview-details {display:contents}
-.report-overview>.mi-tabs,.report-overview>.mi-notice {grid-column:1/-1}
-.report-overview>.mi-tabs {grid-row:1;margin:0}
-.report-overview .mi-overview-nav {grid-row:2;grid-column:1/-1;margin:0}
-.report-overview .mi-summary {grid-column:1;grid-row:3}
-.report-overview>.mi-player-shell {grid-column:2;grid-row:3}
-.report-overview .mi-actions {grid-column:1;grid-row:4 / span 2}
-.report-overview .mi-decisions {grid-column:2;grid-row:4}
-.report-overview #overview-topics {grid-column:2;grid-row:5}
-.report-overview .mi-questions {grid-column:1;grid-row:6}
-.report-overview #overview-entities {grid-column:2;grid-row:6}
-.report-overview .mi-panel {margin:0}
+.report-overview .mi-panel,.report-overview .mi-overview-nav {margin-bottom:20px}
+.report-overview .mi-panel:last-child {margin-bottom:0}
+.report-overview .overview-insights {display:grid!important;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+.report-overview .overview-insights .mi-panel {margin-bottom:0}
+.report-overview .overview-details {display:grid!important;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+.report-overview .overview-details .mi-panel {margin-bottom:0}
 
 /* Floating assistant: keep its mounted conversation when collapsed. */
 .mi-assistant {position:fixed;right:max(24px,env(safe-area-inset-right));bottom:max(24px,env(safe-area-inset-bottom));z-index:80;display:flex;flex-direction:column;align-items:flex-end;gap:12px;margin:0;max-width:calc(100vw - 32px)}
@@ -146,8 +141,9 @@ body {font-size:14px}
 .desktop-sidebar {display:none}
 .mobile-nav {position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--clr-bg);border-bottom:1px solid var(--clr-border);font-weight:700}
 .upload-layout {grid-template-columns:1fr}
-.report-overview {display:block}
 .report-overview .mi-panel,.report-overview .mi-tabs,.report-overview .mi-overview-nav {margin-bottom:18px}
+.report-overview .overview-insights {grid-template-columns:1fr!important}
+.report-overview .overview-details {grid-template-columns:1fr!important}
 .report-overview>.mi-player-shell {margin-bottom:20px}
 .page-container,.dash-inner {padding:28px 22px 48px}
 .mi-overview [id^="overview-"] {scroll-margin-top:80px}
@@ -203,8 +199,52 @@ html {scroll-behavior:auto}
   .dash-inner {padding-bottom:100px}
 }
 
+.mi-action-list {display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
+.mi-action-list .mi-action:nth-child(2) {border-top:none;padding-top:0}
+@media(max-width:700px){.mi-action-list{grid-template-columns:1fr}}
+
 .mi-personal-note {margin-top:14px;padding:12px 14px;background:var(--clr-bg);border:1px solid var(--clr-border);border-radius:10px}
 .mi-note-text {white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.8;margin:6px 0 10px}
 .mi-note-controls {display:flex;gap:12px;flex-wrap:wrap}
 .mi-action-editor textarea {width:100%;min-width:0;resize:vertical;min-height:90px;max-height:320px;padding:10px 12px;border:1px solid var(--clr-border-2);border-radius:8px;background:white;color:var(--clr-text);font:inherit;line-height:1.7}
 .mi-dashboard .mi-note-controls .mi-link {font-size:12px;padding:4px 9px;line-height:1.5;border-radius:6px}
+/* Compact, centered recording frame. */
+.mi-player-shell {
+  max-width: 680px;
+  margin: 0 auto 24px;
+}
+.mi-player-shell .mi-player {
+  padding: 16px;
+  gap: 12px;
+  border-radius: 16px;
+  box-shadow: 0 4px 18px rgba(32, 37, 34, .05);
+}
+.mi-player .mi-section-title h2 { font-size: 14px; }
+.mi-player .mi-section-title .mi-eyebrow { font-size: 10px; }
+.mi-player-video {
+  width: 100%;
+  max-width: 560px;
+  margin-inline: auto;
+  border: 1px solid var(--clr-border);
+  border-radius: 10px;
+}
+.mi-player-controls { gap: 8px; }
+.mi-dashboard .mi-player-controls .mi-player-button {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.mi-player-seek { max-width: 560px; margin-inline: auto; }
+.mi-player-secondary { padding-top: 10px; gap: 12px 24px; }
+.mi-player-volume { flex-basis: 180px; }
+@media (max-width: 520px) {
+  .mi-player-shell .mi-player { padding: 12px; gap: 10px; }
+  .mi-player-secondary { gap: 10px 16px; }
+}
+/* Shorter recording card while retaining the video's 16:9 proportions. */
+.mi-player-shell .mi-player { gap: 8px; padding: 12px 16px; }
+.mi-player-video { max-width: 400px; }
+.mi-player-secondary { padding-top: 8px; }
+.mi-player-time { margin-top: 0; }
+@media (max-width: 520px) {
+  .mi-player-shell .mi-player { gap: 8px; padding: 10px 12px; }
+}

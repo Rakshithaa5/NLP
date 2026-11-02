@@ -221,16 +221,8 @@ function MeetingDashboard({ fileId }) {
               ))}
 
           </>}
-          <div className={`report-layout${!loading && analysis && tab === 'overview' ? ' report-overview' : ''}`}>
-          {fileId && <MeetingPlayer fileId={fileId} meeting={meeting} onActiveSegmentChange={setActiveSegmentId} seekRequest={seekRequest} onSeekHandled={() => setSeekRequest(null)} />}
-          {loading ? (
-            <div role="status" className="mi-loading">
-              <span className="mi-eyebrow">Preparing your meeting</span>
-              <div /><div /><div />
-            </div>
-          ) : (
-            <>
-              <div className="mi-tabs" role="tablist" aria-label="Meeting views">
+          {!loading && (
+<div className="mi-tabs" role="tablist" aria-label="Meeting views">
                 {['overview','transcript','analytics','topics'].map((value, index, tabs) => (
                   <button
                     role="tab" id={`tab-${value}`}
@@ -250,7 +242,17 @@ function MeetingDashboard({ fileId }) {
                   </button>
                 ))}
               </div>
+          )}
+          {fileId && <MeetingPlayer fileId={fileId} meeting={meeting} onActiveSegmentChange={setActiveSegmentId} seekRequest={seekRequest} onSeekHandled={() => setSeekRequest(null)} />}
+          <div className={`report-layout${!loading && analysis && tab === 'overview' ? ' report-overview' : ''}`}>
 
+          {loading ? (
+            <div role="status" className="mi-loading">
+              <span className="mi-eyebrow">Preparing your meeting</span>
+              <div /><div /><div />
+            </div>
+          ) : (
+            <>
               <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
                 {tab === 'overview' && (
                   !analysis ? (

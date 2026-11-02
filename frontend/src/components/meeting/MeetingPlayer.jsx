@@ -117,7 +117,7 @@ export default function MeetingPlayer({ fileId, meeting, onActiveSegmentChange, 
     <div id="meeting-player" tabIndex={-1} className="mi-player-shell">
       <div className="mi-player"><div className="mi-section-title"><h2>Recording</h2><span className="mi-eyebrow">Source recording</span></div>
         {mediaError && <p role="alert" className="mi-chat-error">{mediaError}</p>}
-        <div className="mi-player-media" aria-label="Meeting media player">
+        <div className={`mi-player-media mi-player-${mimeType}`} aria-label="Meeting media player">
           {mimeType === 'video' ? (
             <video ref={audioRef} src={mediaUrl} onError={() => setMediaError('Recording unavailable. Check your connection and try again.')} onLoadedData={() => setMediaError('')} controls={false} preload="metadata" playsInline />
           ) : (
@@ -125,13 +125,15 @@ export default function MeetingPlayer({ fileId, meeting, onActiveSegmentChange, 
           )}
         </div>
         <div className="mi-player-controls">
-          <button type="button" className="mi-player-button" aria-label="Play or pause meeting" onClick={togglePlay}>{isPlaying ? 'Pause' : 'Play'}</button>
-          <button type="button" className="mi-player-button" aria-label="Skip back 10 seconds" onClick={() => skipBy(-10)}>-10s</button>
+          <button type="button" className="mi-player-button" aria-label={isPlaying ? 'Pause meeting' : 'Play meeting'} onClick={togglePlay}>{isPlaying ? 'Pause' : 'Play'}</button>
+          <button type="button" className="mi-player-button" aria-label="Skip back 10 seconds" onClick={() => skipBy(-10)}>−10s</button>
           <button type="button" className="mi-player-button" aria-label="Skip forward 10 seconds" onClick={() => skipBy(10)}>+10s</button>
-          <span className="mi-player-time">{formatClock(currentTime)} / {formatClock(duration)}</span>
+        </div>
           <div className="mi-player-seek">
             <input aria-label="Seek meeting position" type="range" min="0" max={Math.max(duration, 0) || 1} value={Math.min(currentTime, Math.max(duration, 0) || 0)} onChange={(event) => handleSeek(event.target.value)} />
+            <div className="mi-player-time"><span aria-label="Elapsed time">{formatClock(currentTime)}</span><span aria-label="Total duration">{formatClock(duration)}</span></div>
           </div>
+        <div className="mi-player-secondary">
           <label className="mi-player-rate">
             <span>Speed</span>
             <select aria-label="Playback speed" value={String(playbackRate)} onChange={(event) => setPlaybackRate(Number(event.target.value))}>

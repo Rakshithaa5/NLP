@@ -1,102 +1,45 @@
-﻿/* playback.css — Meeting audio/video player — light mode */
-
+/* Recording layout; media event handlers retain playback synchronization. */
 .mi-player-shell {
   position: static;
-  z-index: 1;
-  margin-bottom: 14px;
+  width: 100%;
+  max-width: 680px;
+  min-width: 0;
+  margin: 0 auto 28px;
+  scroll-margin-top: 76px;
 }
-
 .mi-player {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 18px;
+  gap: 18px;
+  padding: 24px;
   border: 1px solid var(--clr-border);
   border-radius: var(--radius-lg);
   background: var(--clr-surface);
   box-shadow: var(--shadow-xs);
 }
-
-.mi-player-media {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  max-height: 200px;
-  overflow: hidden;
-  border-radius: var(--radius-md);
-  background: var(--clr-surface-2);
-}
-
-.mi-player-media audio,
-.mi-player-media video {
-  width: 100%;
-  max-width: 900px;
-  max-height: 200px;
-  object-fit: contain;
-  border-radius: var(--radius-md);
-}
-
-.mi-player-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.mi-player-button {
-  padding: 6px 12px;
-  font-size: 12px;
-  border: 1px solid var(--clr-border-2);
-  border-radius: var(--radius-sm);
-  background: var(--clr-surface-2);
-  color: var(--clr-text-2);
-  cursor: pointer;
-  font-weight: 600;
-  transition: all var(--transition);
-}
-.mi-player-button:hover {
-  background: var(--clr-surface-3);
-  border-color: var(--clr-border-2);
-}
-
-.mi-player-time {
-  font-size: 12px;
-  color: var(--clr-text-muted);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-}
-
-.mi-player-seek {
-  flex: 1 1 140px;
-  min-width: 120px;
-}
-
-.mi-player-seek input,
-.mi-player-volume input {
-  width: 100%;
-  accent-color: var(--clr-primary);
-  cursor: pointer;
-}
-
-.mi-player-rate,
-.mi-player-volume {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--clr-text-muted);
-}
-
-.mi-player-rate select {
-  border: 1px solid var(--clr-border);
-  border-radius: var(--radius-xs);
-  padding: 4px 7px;
-  background: var(--clr-surface-2);
-  color: var(--clr-text);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
+.mi-player .mi-section-title { margin-bottom: 0; flex-wrap: wrap; }
+.mi-player .mi-eyebrow { margin-bottom: 0; }
+.mi-player-media { width: 100%; overflow: hidden; border-radius: var(--radius-md); }
+.mi-player-video { aspect-ratio: 16 / 9; background: #101410; }
+.mi-player-video video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.mi-player-audio { height: 0; }
+.mi-player-controls { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 10px; }
+.mi-player-button { cursor: pointer; white-space: nowrap; }
+.mi-player-seek { width: 100%; min-width: 0; }
+.mi-player-seek input, .mi-player-volume input { width: 100%; min-width: 0; accent-color: var(--clr-primary); cursor: pointer; }
+.mi-player-seek input { display: block; height: 24px; }
+.mi-player-time { display: flex; justify-content: space-between; gap: 16px; margin-top: 4px; font-size: 12px; color: var(--clr-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mi-player-secondary { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px 32px; border-top: 1px solid var(--clr-border); padding-top: 16px; }
+.mi-player-rate, .mi-player-volume { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--clr-text-muted); min-width: 0; }
+.mi-player-rate span, .mi-player-volume span { white-space: nowrap; flex-shrink: 0; }
+.mi-player-volume { flex: 0 1 240px; }
+.mi-player-volume input { flex: 1; }
+.mi-player-rate select { border: 1px solid var(--clr-border); border-radius: 6px; padding: 7px 10px; background: var(--clr-surface-2); color: var(--clr-text); font: inherit; cursor: pointer; }
+@media (max-width: 520px) {
+  .mi-player-shell { margin-bottom: 20px; }
+  .mi-player { padding: 16px; gap: 14px; }
+  .mi-player-secondary { gap: 14px 20px; }
+  .mi-player-volume { flex-basis: 200px; }
 }
 
 .mi-follow {
