@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import ActionNote from './ActionNote'
+import { actionNoteKey } from './notes'
 import { list, text, timestamp, number } from './data'
 
 export function Panel({title, count, children, className = '', subtitle, id}) {
@@ -24,42 +26,19 @@ export function MeetingSummary({intelligence}) {
     <div id="overview-key-points" tabIndex={-1} className="mi-takeaway"><span className="mi-eyebrow takeaway-label"><svg aria-hidden="true" width="20" height="24" viewBox="0 0 24 28" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M8 19c0-4-4-5-4-10a8 8 0 0 1 16 0c0 5-4 6-4 10M8 20h8M9 24h6M10 27h4M10 17v-6l4 2v4"/></svg>Key takeaway</span><p dir="auto">{intelligence.key_takeaway || 'No dominant overall outcome was identified.'}</p></div>
   </Panel>
 }
-function ActionItem({item, index, onSaveAction, editingDisabled, ...evidenceProps}) {
-  const [editing, setEditing] = useState(false)
-  const [deadline, setDeadline] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
-  function edit() {
-    setDeadline(text(item.deadline))
-    setError(''); setSaved(false); setEditing(true)
-  }
-  async function submit(event) {
-    event.preventDefault()
-    if (saving || editingDisabled) return
-    setSaving(true); setError('')
-    try { await onSaveAction(index, {deadline}); setEditing(false); setSaved(true) }
-    catch (e) { setError(e.message || 'Could not save changes. Please retry.') }
-    finally { setSaving(false) }
-  }
+function ActionItem({item, index, noteKey, ...evidenceProps}) {
   return <article className="mi-action">
     <span className="mi-item-index">{String(index + 1).padStart(2, '0')}</span>
     <div className="mi-action-body"><h3 dir="auto">{text(item.task)}</h3>
-      <dl className="mi-action-meta"><div><dt>Deadline{item.manually_edited && ' (manually edited)'}</dt><dd>{text(item.deadline) || 'Not specified'}</dd></div><div><dt>Priority</dt><dd>{text(item.priority) || 'Not specified'}</dd></div></dl>
-      {editing ? <form className="mi-action-editor" onSubmit={submit}>
-        <label>Deadline<input value={deadline} maxLength={200} onChange={e => setDeadline(e.target.value)} disabled={saving} placeholder="e.g. 25 Oct 2026 or next Friday" /></label>
-        <p className="mi-caption mi-muted">Set or correct the deadline manually. Leave it blank to clear it.</p>
-        {error && <p role="alert" className="mi-error">{error}</p>}
-        <div className="mi-action-editor-buttons"><button type="submit" disabled={saving || editingDisabled}>{saving ? 'Saving...' : 'Save deadline'}</button><button type="button" disabled={saving} onClick={() => setEditing(false)}>Cancel</button></div>
-      </form> : onSaveAction && <button type="button" className="mi-link" disabled={editingDisabled} onClick={edit} aria-label={`Edit deadline for action ${index + 1}`}>Edit deadline</button>}
-      {saved && <p role="status" className="mi-caption">Deadline saved.</p>}
+      <dl className="mi-action-meta"><div><dt>Deadline</dt><dd>{text(item.deadline) || 'Not specified'}</dd></div><div><dt>Priority</dt><dd>{text(item.priority) || 'Not specified'}</dd></div></dl>
+      <ActionNote key={noteKey} storageKey={noteKey}/>
       <Evidence item={item} {...evidenceProps}/>
     </div>
   </article>
 }
-export function ActionItems({items, ...props}) {
+export function ActionItems({items, fileId, sourceItems, ...props}) {
   return <Panel id="overview-actions" title="Action items" count={items.length} className="mi-actions">
-    {!items.length ? <Empty>No action items were identified.</Empty> : <div className="mi-action-list">{items.map((item, index) => <ActionItem key={`${index}-${item.task}`} item={item} index={index} {...props}/>)}</div>}
+    {!items.length ? <Empty>No action items were identified.</Empty> : <div className="mi-action-list">{items.map((item, index) => <ActionItem key={`${index}-${item.task}`} item={item} index={index} noteKey={actionNoteKey(fileId, sourceItems[index] || item)} {...props}/>)}</div>}
   </Panel>
 }
 export function Decisions({items, ...evidenceProps}) {
@@ -79,7 +58,7 @@ export function EntityPanel({entities}) {
   const groups = Object.entries(labels).filter(([key]) => list(entities[key]).some(v => text(v)))
   return <Panel id="overview-entities" title="Entities mentioned" subtitle="Mentioned people are not necessarily meeting participants.">{!groups.length ? <Empty>No reliable named entities were detected.</Empty> : groups.map(([key, label]) => <div className="mi-entity-group" key={key}><h3 className="mi-eyebrow">{label}</h3><div className="mi-chips">{list(entities[key]).filter(v => text(v)).map((value, index) => <span className="mi-chip" key={index} dir="auto">{value}</span>)}</div></div>)}</Panel>
 }
-export default function Overview({analysis, segments, onJump, onSaveAction, editingDisabled}) {
+export default function Overview({analysis, segments, onJump, fileId, sourceItems}) {
   const i = analysis.intelligence, evidenceProps = {segments, onJump}
   const [selected, setSelected] = useState('summary')
   const sections = [['summary', 'Summary'], ['key-points', 'Key points'], ['actions', 'Actions'], ['decisions', 'Decisions'], ['questions', 'Questions & follow-ups'], ['topics', 'Topics'], ['entities', 'Entities']]
@@ -93,6 +72,6 @@ export default function Overview({analysis, segments, onJump, onSaveAction, edit
   return <div className="mi-overview">
     <nav className="mi-overview-nav" aria-label="Overview sections">{sections.map(([id, label]) => <a key={id} href={`#overview-${id}`} aria-current={selected === id ? 'location' : undefined} onClick={event => navigate(event, id)}>{label}</a>)}</nav>
     <MeetingSummary intelligence={i}/>
-    <ActionItems key={analysis.analyzed_at} items={i.action_items} onSaveAction={onSaveAction} editingDisabled={editingDisabled} {...evidenceProps}/><div className="overview-insights"><Decisions items={i.decisions} {...evidenceProps}/><OpenQuestions items={i.questions} followUps={list(i.follow_ups)} {...evidenceProps}/></div>
+    <ActionItems key={analysis.analyzed_at} items={i.action_items} fileId={fileId} sourceItems={sourceItems} {...evidenceProps}/><div className="overview-insights"><Decisions items={i.decisions} {...evidenceProps}/><OpenQuestions items={i.questions} followUps={list(i.follow_ups)} {...evidenceProps}/></div>
     <div className="overview-details"><DiscussionTopics items={i.topics} {...evidenceProps}/><EntityPanel entities={i.entities}/></div></div>
 }

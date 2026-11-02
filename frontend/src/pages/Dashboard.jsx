@@ -10,7 +10,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { getAnalysis, getTranscript, analyzeMeeting, exportPdf, updateActionDetails } from '../services/api'
+import { getAnalysis, getTranscript, analyzeMeeting, exportPdf } from '../services/api'
 import { TranslationProvider, MeetingLanguageControl, TranslationStatus } from '../components/meeting/TranslationContext'
 import { useEnglishDisplay } from '../components/meeting/translationHooks'
 import NavBar from '../components/NavBar'
@@ -100,20 +100,6 @@ function MeetingDashboard({ fileId }) {
     try { setAnalysis(normalizeAnalysis(await analyzeMeeting(fileId, undefined, true))); setRetryAt(0) }
     catch (e) { handleError(e, 'analysis') }
     finally { setBusy(false) }
-  }
-
-  async function saveAction(index, details) {
-    const result = await updateActionDetails(fileId, index, {
-      ...details,
-      owner: analysis.intelligence.action_items[index].owner || '',
-      deadline: details.deadline === data.intelligence.action_items[index].deadline
-        ? analysis.intelligence.action_items[index].deadline : details.deadline,
-      task: analysis.intelligence.action_items[index].task,
-      analyzed_at: analysis.analyzed_at || '',
-    })
-    setAnalysis(current => ({...current, intelligence: {...current.intelligence,
-      action_items: current.intelligence.action_items.map((item, i) => i === index ? result.item : item),
-    }}))
   }
 
   async function download() {
@@ -269,7 +255,7 @@ function MeetingDashboard({ fileId }) {
                       </button>
                     </section>
                   ) : (
-                    <Overview analysis={data} segments={displaySegments} onJump={jump} onSaveAction={saveAction} editingDisabled={busy} />
+                    <Overview analysis={data} segments={displaySegments} onJump={jump} fileId={fileId} sourceItems={analysis.intelligence.action_items} />
                   )
                 )}
                 {tab === 'transcript' && (
