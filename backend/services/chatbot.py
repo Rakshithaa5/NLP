@@ -14,6 +14,17 @@ logger = logging.getLogger(__name__)
 NOT_FOUND = "I couldn't find this in the meeting."
 
 
+def _language(value):
+    value = str(value or "").strip().lower().replace("_", "-")
+    return value if re.fullmatch(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})*", value) else ""
+
+
+def _not_found(language):
+    if _language(language).split("-")[0] == "fr":
+        return "Je n’ai pas trouvé cette information dans la réunion."
+    return NOT_FOUND
+
+
 class ChatbotError(RuntimeError):
     """A chatbot-only provider/configuration failure."""
 
@@ -85,7 +96,9 @@ def _json(value):
 class ChatbotClient:
     """Dedicated provider client. It never reads the analysis API key."""
 
-    def __init__(self):
+    def __init__(self, language=None):
+        self.language = _language(language)
+        self.not_found = _not_found(language)
         self.api_key = os.getenv("GROQ_CHATBOT_API_KEY")
         self.model = os.getenv("GROQ_CHATBOT_MODEL", "openai/gpt-oss-20b")
         self.base_url = os.getenv("GROQ_CHATBOT_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
@@ -110,6 +123,13 @@ class ChatbotClient:
             "Return JSON only with answer (string) and evidence_segment_ids (array of strings). "
             "A factual answer must cite one or more supplied segment IDs; an unsupported answer "
             "must cite none. Never use general knowledge or invent details."
+        )
+        system = system.replace(NOT_FOUND, self.not_found)
+        system += (
+            " Default to the meeting language (" + (self.language or "infer from transcript") + ") "
+            "for answers, even if the question or history is in another language. "
+            "If the latest question explicitly requests a different response language, use it "
+            "for supported answers. Keep JSON keys and segment IDs unchanged."
         )
         payload = {
             "model": self.model,
@@ -178,25 +198,26 @@ class ChatbotClient:
         if not isinstance(answer, str) or not isinstance(evidence, list):
             raise ChatbotError("The meeting chatbot returned an invalid response.")
         valid_ids = [value for value in evidence if isinstance(value, str) and value in context_ids]
-        if answer.strip() == NOT_FOUND:
-            return {"answer": NOT_FOUND, "evidence_segment_ids": []}
+        if answer.strip() in {NOT_FOUND, self.not_found}:
+            return {"answer": self.not_found, "evidence_segment_ids": []}
         if not answer.strip() or len(valid_ids) != len(evidence) or not valid_ids:
-            return {"answer": NOT_FOUND, "evidence_segment_ids": []}
+            return {"answer": self.not_found, "evidence_segment_ids": []}
         return {"answer": answer.strip(), "evidence_segment_ids": list(dict.fromkeys(valid_ids))}
 
 
 def ask_meeting(meeting, question, history=None, client=None):
+    not_found = _not_found(meeting.get("language"))
     history = history or []
     context = retrieve_segments(meeting, question)
     if not context:
-        return {"answer": NOT_FOUND, "evidence_segment_ids": []}
-    result = (client or ChatbotClient()).answer(question, history, context)
+        return {"answer": not_found, "evidence_segment_ids": []}
+    result = (client or ChatbotClient(language=meeting.get("language"))).answer(question, history, context)
     provided_ids = {row["segment_id"] for row in context}
     rows_by_id = {row["segment_id"]: row for row in _segment_rows(meeting)
                   if row["segment_id"] in provided_ids}
     evidence_ids = result.get("evidence_segment_ids", [])
     if not isinstance(evidence_ids, list) or any(value not in rows_by_id for value in evidence_ids):
-        return {"answer": NOT_FOUND, "evidence_segment_ids": []}
+        return {"answer": not_found, "evidence_segment_ids": []}
     result["evidence_segment_ids"] = list(dict.fromkeys(evidence_ids))
     result["evidence"] = [rows_by_id[value] for value in result["evidence_segment_ids"]]
     result["context_limited"] = context != _segment_rows(meeting)

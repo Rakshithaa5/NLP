@@ -2,7 +2,24 @@ import { useEffect, useRef, useState } from 'react'
 import { askMeeting } from '../../services/api'
 import { timestamp } from './data'
 
-const STARTERS = ['What decisions were made?', 'What are the key action items?', 'What remains unresolved?', 'Summarize this meeting']
+const COPY = {
+  en: {
+    starters: ['What decisions were made?', 'What are the key action items?', 'What remains unresolved?', 'Summarize this meeting'],
+    title: 'Ask This Meeting', assistant: 'Your meeting assistant', close: 'Close meeting assistant', open: 'Open meeting assistant',
+    caption: "Answers are grounded only in this meeting's transcript.", you: 'You', answer: 'Meeting answer', evidence: 'Evidence',
+    limited: 'Based on selected transcript excerpts; some meeting details may be missing.',
+    placeholder: 'Ask about this meeting...', input: 'Ask about this meeting', asking: 'Asking...', ask: 'Ask',
+    retry: seconds => `Retry in ${seconds}s`, unavailable: 'The meeting chatbot is temporarily unavailable.',
+  },
+  fr: {
+    starters: ['Quelles décisions ont été prises ?', 'Quelles sont les principales actions à réaliser ?', 'Quels points restent à résoudre ?', 'Résume cette réunion'],
+    title: 'Interroger cette réunion', assistant: 'Votre assistant de réunion', close: 'Fermer l’assistant de réunion', open: 'Ouvrir l’assistant de réunion',
+    caption: 'Les réponses reposent uniquement sur la transcription de cette réunion.', you: 'Vous', answer: 'Réponse', evidence: 'Sources',
+    limited: 'Réponse basée sur des extraits sélectionnés ; certains détails de la réunion peuvent manquer.',
+    placeholder: 'Posez une question sur cette réunion…', input: 'Poser une question sur cette réunion', asking: 'Recherche…', ask: 'Demander',
+    retry: seconds => `Réessayer dans ${seconds} s`, unavailable: 'L’assistant de réunion est temporairement indisponible.',
+  },
+}
 
 function segmentIndex(id) {
   const match = typeof id === 'string' ? id.match(/^SEG_(\d+)$/) : null
@@ -10,6 +27,8 @@ function segmentIndex(id) {
 }
 
 export default function AskThisMeeting({fileId, meeting, onJump}) {
+  const language = (meeting.language || '').toLowerCase().replace('_', '-').split('-')[0]
+  const copy = COPY[language] || COPY.en
   const [open, setOpen] = useState(false)
   const launcher = useRef(null)
   const input = useRef(null)
@@ -58,29 +77,29 @@ export default function AskThisMeeting({fileId, meeting, onJump}) {
         setRemaining(seconds)
         setRetryAt(Date.now() + seconds * 1000)
       }
-      setError(requestError.message || 'The meeting chatbot is temporarily unavailable.')
+      setError(requestError.message || copy.unavailable)
     } finally { inFlight.current = false; setBusy(false) }
   }
 
   return <div className="mi-assistant">
-    <section id="meeting-assistant" className="mi-assistant-window" role="dialog" aria-label="Ask This Meeting" hidden={!open} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
-      <header className="mi-assistant-header"><div><span className="mi-eyebrow">Your meeting assistant</span><h2>Ask This Meeting</h2></div><button type="button" className="mi-assistant-close" aria-label="Close meeting assistant" onClick={close}>&times;</button></header>
+    <section id="meeting-assistant" className="mi-assistant-window" role="dialog" aria-label={copy.title} hidden={!open} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
+      <header className="mi-assistant-header"><div><span className="mi-eyebrow">{copy.assistant}</span><h2>{copy.title}</h2></div><button type="button" className="mi-assistant-close" aria-label={copy.close} onClick={close}>&times;</button></header>
       <div className="mi-assistant-body">
-      <p className="mi-caption mi-muted">Answers are grounded only in this meeting's transcript.</p>
-    {!messages.length && <div className="mi-chat-starters">{STARTERS.map(starter => <button type="button" key={starter} disabled={busy || remaining > 0} onClick={() => submit(starter)}>{starter}</button>)}</div>}
+      <p className="mi-caption mi-muted">{copy.caption}</p>
+    {!messages.length && <div className="mi-chat-starters">{copy.starters.map(starter => <button type="button" key={starter} disabled={busy || remaining > 0} onClick={() => submit(starter)}>{starter}</button>)}</div>}
     {messages.length > 0 && <div className="mi-chat-messages" ref={messageList} aria-live="polite">{messages.map((message, index) => <article className={`mi-chat-message mi-chat-${message.role}`} key={`${message.role}-${index}`}>
-      <span className="mi-eyebrow">{message.role === 'user' ? 'You' : 'Meeting answer'}</span><p dir="auto">{message.content}</p>
-      {message.contextLimited && <p className="mi-muted">Based on selected transcript excerpts; some meeting details may be missing.</p>}
-      {message.role === 'assistant' && message.evidence?.length > 0 && <div className="mi-chat-evidence"><span className="mi-muted">Evidence</span>{message.evidence.map(id => {
+      <span className="mi-eyebrow">{message.role === 'user' ? copy.you : copy.answer}</span><p dir="auto">{message.content}</p>
+      {message.contextLimited && <p className="mi-muted">{copy.limited}</p>}
+      {message.role === 'assistant' && message.evidence?.length > 0 && <div className="mi-chat-evidence"><span className="mi-muted">{copy.evidence}</span>{message.evidence.map(id => {
         const index = segmentIndex(id), segment = index == null ? null : meeting.segments[index]
         return segment ? <button type="button" className="mi-link" key={id} onClick={() => { close(); onJump({segment_ids: [index], timestamp: segment.start}) }}>▶ {timestamp(segment.start)}</button> : null
       })}</div>}
     </article>)}</div>}
       </div>
     {error && <div role="alert" className="mi-chat-error">{error}</div>}
-    <form className="mi-chat-form" onSubmit={event => {event.preventDefault(); submit()}}><input ref={input} aria-label="Ask about this meeting" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about this meeting..." disabled={busy}/><button className="mi-primary" type="submit" disabled={busy || remaining > 0 || !question.trim()}>{busy ? 'Asking...' : remaining > 0 ? `Retry in ${remaining}s` : 'Ask'}</button></form>
+    <form className="mi-chat-form" onSubmit={event => {event.preventDefault(); submit()}}><input ref={input} aria-label={copy.input} value={question} onChange={event => setQuestion(event.target.value)} placeholder={copy.placeholder} disabled={busy}/><button className="mi-primary" type="submit" disabled={busy || remaining > 0 || !question.trim()}>{busy ? copy.asking : remaining > 0 ? copy.retry(remaining) : copy.ask}</button></form>
     </section>
-    <button ref={launcher} type="button" className="mi-assistant-launcher" aria-label={open ? 'Close meeting assistant' : 'Open meeting assistant'} aria-expanded={open} aria-controls="meeting-assistant" onClick={() => open ? close() : setOpen(true)}>
+    <button ref={launcher} type="button" className="mi-assistant-launcher" aria-label={open ? copy.close : copy.open} aria-expanded={open} aria-controls="meeting-assistant" onClick={() => open ? close() : setOpen(true)}>
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v3M9 3h6"/><rect x="4" y="6" width="16" height="14" rx="5"/><path d="M1 11v4m22-4v4M9 15h6"/><circle cx="8.5" cy="11" r=".75" fill="currentColor"/><circle cx="15.5" cy="11" r=".75" fill="currentColor"/></svg>
     </button>
   </div>

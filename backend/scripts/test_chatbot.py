@@ -31,6 +31,35 @@ class StubClient:
 
 
 class ChatbotTests(unittest.TestCase):
+    def test_french_meeting_language_reaches_provider_and_preserves_evidence(self):
+        meeting = dict(MEETING, language="fr-FR")
+        answer = "Le processus a connu un problème."
+        body = io.StringIO(json.dumps({"choices": [{"message": {"content": json.dumps({
+            "answer": answer, "evidence_segment_ids": ["SEG_0"]
+        })}}]}))
+        with patch("backend.services.chatbot.urlopen", return_value=body) as provider, patch.dict(
+                os.environ, {"GROQ_CHATBOT_API_KEY": "test-only"}, clear=True):
+            result = ask_meeting(meeting, "Summarize this meeting")
+        payload = json.loads(provider.call_args.args[0].data)
+        self.assertIn("meeting language (fr-fr)", payload["messages"][0]["content"])
+        self.assertIn("explicitly requests a different response language", payload["messages"][0]["content"])
+        self.assertEqual(result["answer"], answer)
+        self.assertEqual(result["evidence"][0]["start"], 10)
+
+    def test_french_refusals_remain_localized_and_grounded(self):
+        expected = "Je n’ai pas trouvé cette information dans la réunion."
+        self.assertEqual(ask_meeting({"language": "fr"}, "Question")["answer"], expected)
+        self.assertEqual(ask_meeting(dict(MEETING, language="fr"), "Question",
+                                    client=StubClient(["SEG_999"]))["answer"], expected)
+        body = io.StringIO(json.dumps({"choices": [{"message": {"content": json.dumps({
+            "answer": "Unsupported claim", "evidence_segment_ids": []
+        })}}]}))
+        with patch("backend.services.chatbot.urlopen", return_value=body), patch.dict(
+                os.environ, {"GROQ_CHATBOT_API_KEY": "test-only"}, clear=True):
+            result = ask_meeting(dict(MEETING, language="fr"), "Question")
+        self.assertEqual(result["answer"], expected)
+        self.assertEqual(result["evidence_segment_ids"], [])
+
     def test_foreign_or_unprovided_evidence_is_refused(self):
         result = ask_meeting(MEETING, "What about authentication?", client=StubClient(["SEG_1", "SEG_999"]))
         self.assertEqual(result, {"answer": NOT_FOUND, "evidence_segment_ids": []})
