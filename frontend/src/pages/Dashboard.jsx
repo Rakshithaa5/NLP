@@ -11,6 +11,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { getAnalysis, getTranscript, analyzeMeeting, exportPdf, updateActionDetails } from '../services/api'
+import { TranslationProvider, MeetingLanguageControl, TranslationStatus } from '../components/meeting/TranslationContext'
+import { useEnglishDisplay } from '../components/meeting/translationHooks'
 import MeetingHeader from '../components/meeting/MeetingHeader'
 import Overview from '../components/meeting/Overview'
 import TranscriptViewer from '../components/meeting/TranscriptViewer'
@@ -88,7 +90,7 @@ function MeetingSidebar({ fileId, tab, activate }) {
 
 export default function Dashboard() {
   const { fileId } = useParams()
-  return <MeetingDashboard key={fileId} fileId={fileId} />
+  return <TranslationProvider key={fileId} fileId={fileId}><MeetingDashboard fileId={fileId} /></TranslationProvider>
 }
 
 function MeetingDashboard({ fileId }) {
@@ -162,7 +164,10 @@ function MeetingDashboard({ fileId }) {
 
   async function saveAction(index, details) {
     const result = await updateActionDetails(fileId, index, {
-      ...details, task: analysis.intelligence.action_items[index].task,
+      ...details,
+      deadline: details.deadline === data.intelligence.action_items[index].deadline
+        ? analysis.intelligence.action_items[index].deadline : details.deadline,
+      task: analysis.intelligence.action_items[index].task,
       analyzed_at: analysis.analyzed_at || '',
     })
     setAnalysis(current => ({...current, intelligence: {...current.intelligence,
@@ -200,8 +205,20 @@ function MeetingDashboard({ fileId }) {
     activate('transcript')
   }
 
-  const data = analysis || normalizeAnalysis(null)
-  const displaySegments = useMemo(() => meeting.segments || [], [meeting.segments])
+  // Translate one immutable display copy; mutations and evidence navigation use originals.
+  const sourceDisplay = useMemo(() => ({
+    meeting: meeting.segments.length ? {...meeting, full_text: ''} : meeting,
+    analysis,
+  }), [meeting, analysis])
+  const translated = useEnglishDisplay(sourceDisplay)
+  const displayMeeting = useMemo(() => translated === sourceDisplay ? meeting : ({...translated.meeting,
+    full_text: translated.meeting.segments.length
+      ? translated.meeting.segments.map(segment => segment.text).join(' ')
+      : translated.meeting.full_text,
+  }), [translated, sourceDisplay, meeting])
+  const data = translated.analysis || normalizeAnalysis(null)
+  const displaySegments = displayMeeting.segments
+
 
   return (
     <div className="dash-shell">
@@ -218,9 +235,11 @@ function MeetingDashboard({ fileId }) {
           <span style={{ fontSize: 13, color: 'var(--clr-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 320 }}>
             {meeting.filename || 'Meeting Analysis'}
           </span>
+          {!loading && <MeetingLanguageControl language={meeting.language} />}
         </div>
 
         <div className="dash-inner mi-dashboard">
+          <TranslationStatus />
           <MeetingHeader
             meeting={meeting} busy={busy} analyzeDisabled={analysisDisabled}
             exporting={exporting} hasAnalysis={!!analysis}
@@ -229,7 +248,7 @@ function MeetingDashboard({ fileId }) {
 
           {fileId && <MeetingPlayer fileId={fileId} meeting={meeting} onActiveSegmentChange={setActiveSegmentId} seekRequest={seekRequest} onSeekHandled={() => setSeekRequest(null)} />}
 
-          {!loading && fileId && <AskThisMeeting fileId={fileId} meeting={meeting} onJump={jump} />}
+          {!loading && fileId && <AskThisMeeting fileId={fileId} meeting={displayMeeting} onJump={jump} />}
 
           {error && (
             <div role="alert" className="mi-notice mi-error">
@@ -314,7 +333,7 @@ function MeetingDashboard({ fileId }) {
                 {tab === 'transcript' && (
                   <TranscriptViewer
                     key={target?.nonce || 'initial'}
-                    meeting={meeting} intelligence={data.intelligence} target={target}
+                    meeting={displayMeeting} intelligence={data.intelligence} target={target}
                     activeSegmentId={activeSegmentId}
                     selectedEvidenceSegmentIds={selectedEvidenceSegmentIds}
                     onSeek={requestSeek} onSegmentSelect={jump}

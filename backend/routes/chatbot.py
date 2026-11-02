@@ -1,5 +1,6 @@
 """Current-meeting-only Ask This Meeting endpoint."""
 from uuid import UUID
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -16,6 +17,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    response_language: Literal["en"] | None = None
     question: str = Field(min_length=1, max_length=2000)
     history: list[ChatMessage] = Field(default_factory=list, max_length=6)
 
@@ -37,7 +39,7 @@ def chat(file_id: str, request: ChatRequest):
     history = [{"role": item.role, "content": item.content} for item in request.history
                if item.role in {"user", "assistant"} and item.content.strip()]
     try:
-        return ask_meeting(meeting, request.question.strip(), history)
+        return ask_meeting(meeting, request.question.strip(), history, response_language=request.response_language)
     except ChatbotRateLimitError as exc:
         raise HTTPException(status_code=429, detail=str(exc),
                             headers={"Retry-After": str(exc.retry_after)}) from exc

@@ -205,13 +205,14 @@ class ChatbotClient:
         return {"answer": answer.strip(), "evidence_segment_ids": list(dict.fromkeys(valid_ids))}
 
 
-def ask_meeting(meeting, question, history=None, client=None):
-    not_found = _not_found(meeting.get("language"))
+def ask_meeting(meeting, question, history=None, client=None, response_language=None):
+    language = response_language or meeting.get("language")
+    not_found = _not_found(language)
     history = history or []
     context = retrieve_segments(meeting, question)
     if not context:
         return {"answer": not_found, "evidence_segment_ids": []}
-    result = (client or ChatbotClient(language=meeting.get("language"))).answer(question, history, context)
+    result = (client or ChatbotClient(language=language)).answer(question, history, context)
     provided_ids = {row["segment_id"] for row in context}
     rows_by_id = {row["segment_id"]: row for row in _segment_rows(meeting)
                   if row["segment_id"] in provided_ids}

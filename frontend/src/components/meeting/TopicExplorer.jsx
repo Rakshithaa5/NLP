@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { runTopicSegmentation, getTopicSegmentation, getCrossMeetingTopics } from '../../services/api'
 import { Panel, Empty } from './Overview'
 import { timestamp, list, number } from './data'
+import { useEnglishDisplay } from './translationHooks'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
 // ── Colour palette for canonical topics (deterministic by id) ────────────────
@@ -243,7 +244,8 @@ function TopicDistribution({ canonicalTopics, segments }) {
 
 // ── Cross-Meeting Evolution ───────────────────────────────────────────────────
 function CrossMeetingEvolution() {
-  const [data, setData] = useState(null)
+  const [sourceData, setData] = useState(null)
+  const data = useEnglishDisplay(sourceData)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -340,7 +342,8 @@ function TopicOverview({ segments, canonicalTopics }) {
 
 // ── Main TopicExplorer ────────────────────────────────────────────────────────
 export default function TopicExplorer({ fileId, onJump }) {
-  const [data, setData] = useState(null)
+  const [sourceData, setData] = useState(null)
+  const data = useEnglishDisplay(sourceData)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')

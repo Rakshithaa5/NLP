@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Panel, Empty } from './Overview'
 import { list, timestamp } from './data'
+import { useMeetingLanguage } from './translationHooks'
 
 const getRangeLabel = segment => segment.start !== null && Number.isFinite(segment.start) ? timestamp(segment.start) : 'No timestamp'
 
@@ -17,6 +18,7 @@ function Highlight({value, query}) {
   return parts
 }
 export default function TranscriptViewer({meeting, intelligence, target, activeSegmentId, selectedEvidenceSegmentIds = [], onSeek, onSegmentSelect}) {
+  const {english} = useMeetingLanguage()
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('All')
   const [autoFollow, setAutoFollow] = useState(true)
   const container = useRef(null)
@@ -58,7 +60,7 @@ export default function TranscriptViewer({meeting, intelligence, target, activeS
 
   const needle = query.trim()
   const visible = segments.filter(s => (!needle || s.text.toLocaleLowerCase().includes(needle.toLocaleLowerCase())) && (filter === 'All' || labels.get(s.id)?.has(filter)))
-  return <Panel title="Transcript" subtitle="Original recording text. Timestamps refer to transcript segments, not audio playback.">
+  return <Panel title="Transcript" subtitle={english ? 'English translation of the recording. Original segment timestamps are preserved.' : 'Original recording text. Timestamps refer to transcript segments, not audio playback.'}>
     <div className="mi-transcript-controls"><label className="mi-search"><span>Search transcript</span><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Find a word or phrase..."/></label>
     </div>
     <div className="mi-filter-row" aria-label="Filter transcript">{['All', 'Actions', 'Decisions', 'Questions'].map(label => <button key={label} aria-pressed={filter === label} onClick={() => setFilter(label)}>{label}</button>)}<span className="mi-muted">{visible.length} of {segments.length} segments</span>{!autoFollow && <button className="mi-follow" type="button" onClick={() => { setAutoFollow(true); if (activeSegmentId != null) setTimeout(() => container.current?.querySelector(`[data-segment="${activeSegmentId}"]`)?.scrollIntoView({block: 'center', behavior: 'smooth'}), 60) }}>Resume following</button>}</div>

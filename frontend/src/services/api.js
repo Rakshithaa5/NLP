@@ -142,11 +142,11 @@ export async function getAnalysis(fileId) {
 }
 
 /** Ask a question using only the current meeting transcript. */
-export async function askMeeting(fileId, question, history = []) {
+export async function askMeeting(fileId, question, history = [], responseLanguage = null) {
   const res = await fetch(`${BASE}/api/chat/${fileId}`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({question, history}),
+    body: JSON.stringify({question, history, response_language: responseLanguage}),
   })
   return _handleResponse(res)
 }
@@ -230,6 +230,15 @@ export async function updateActionDetails(fileId, index, details) {
     method: 'PATCH',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(details),
+  })
+  return _handleResponse(res)
+}
+
+/** Translate display text into English; source records remain unchanged. */
+export async function translateMeetingText(fileId, texts) {
+  const res = await fetch(`${BASE}/api/translation/${fileId}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({texts}),
   })
   return _handleResponse(res)
 }

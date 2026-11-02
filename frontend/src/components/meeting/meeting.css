@@ -29,3 +29,17 @@
 .mi-overview-nav a:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: -2px; }
 .mi-overview [id^="overview-"] { scroll-margin-top: 140px; }
 .mi-overview [id^="overview-"]:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 3px; }
+
+/* The language switch stays visible across all meeting tabs. */
+.mi-language-control { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; font-size: 12px; }
+.mi-language-switch { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.mi-switch-track { display: inline-flex; align-items: center; width: 30px; height: 18px; border-radius: 12px; background: #a3a3a3; padding: 2px; }
+.mi-switch-track > span { width: 14px; height: 14px; border-radius: 50%; background: white; transition: transform .15s ease; }
+.mi-language-switch[aria-checked="true"] .mi-switch-track { background: #529d55; }
+.mi-language-switch[aria-checked="true"] .mi-switch-track > span { transform: translateX(12px); }
+.mi-language-switch:focus-visible { outline: 2px solid #529d55; outline-offset: 3px; }
+@media (max-width: 850px) {
+  .dash-topbar { height: auto; min-height: 56px; flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
+  .mi-language-control { width: 100%; margin-left: 0; justify-content: space-between; }
+}
+@media (prefers-reduced-motion: reduce) { .mi-switch-track > span { transition: none; } }

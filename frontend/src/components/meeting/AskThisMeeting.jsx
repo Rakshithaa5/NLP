@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { askMeeting } from '../../services/api'
 import { timestamp } from './data'
+import { useEnglishDisplay, useMeetingLanguage } from './translationHooks'
 
 const COPY = {
   en: {
@@ -27,7 +28,8 @@ function segmentIndex(id) {
 }
 
 export default function AskThisMeeting({fileId, meeting, onJump}) {
-  const language = (meeting.language || '').toLowerCase().replace('_', '-').split('-')[0]
+  const {english} = useMeetingLanguage()
+  const language = (english ? 'en' : meeting.language || '').toLowerCase().replace('_', '-').split('-')[0]
   const copy = COPY[language] || COPY.en
   const [open, setOpen] = useState(false)
   const launcher = useRef(null)
@@ -35,6 +37,7 @@ export default function AskThisMeeting({fileId, meeting, onJump}) {
   const messageList = useRef(null)
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState([])
+  const displayMessages = useEnglishDisplay(messages)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [retryAt, setRetryAt] = useState(0)
@@ -67,7 +70,7 @@ export default function AskThisMeeting({fileId, meeting, onJump}) {
     setMessages(current => [...current, {role: 'user', content: prompt}])
     setQuestion(''); setError(''); setBusy(true)
     try {
-      const result = await askMeeting(fileId, prompt, history)
+      const result = await askMeeting(fileId, prompt, history, english ? 'en' : null)
       setMessages(current => [...current, {role: 'assistant', content: result.answer, evidence: result.evidence_segment_ids || [], contextLimited: result.context_limited}])
     } catch (requestError) {
       setMessages(current => current.slice(0, -1))
@@ -87,7 +90,7 @@ export default function AskThisMeeting({fileId, meeting, onJump}) {
       <div className="mi-assistant-body">
       <p className="mi-caption mi-muted">{copy.caption}</p>
     {!messages.length && <div className="mi-chat-starters">{copy.starters.map(starter => <button type="button" key={starter} disabled={busy || remaining > 0} onClick={() => submit(starter)}>{starter}</button>)}</div>}
-    {messages.length > 0 && <div className="mi-chat-messages" ref={messageList} aria-live="polite">{messages.map((message, index) => <article className={`mi-chat-message mi-chat-${message.role}`} key={`${message.role}-${index}`}>
+    {messages.length > 0 && <div className="mi-chat-messages" ref={messageList} aria-live="polite">{displayMessages.map((message, index) => <article className={`mi-chat-message mi-chat-${message.role}`} key={`${message.role}-${index}`}>
       <span className="mi-eyebrow">{message.role === 'user' ? copy.you : copy.answer}</span><p dir="auto">{message.content}</p>
       {message.contextLimited && <p className="mi-muted">{copy.limited}</p>}
       {message.role === 'assistant' && message.evidence?.length > 0 && <div className="mi-chat-evidence"><span className="mi-muted">{copy.evidence}</span>{message.evidence.map(id => {
