@@ -317,6 +317,128 @@ When a re-analysis job executes, the reconciliation function $\mathcal{R}(e_{\te
 
 ---
 
+### G. End-to-End Processing Algorithm and Reproducibility Controls
+
+The complete analysis procedure is implemented as an ordered, fail-closed
+workflow. Let an uploaded meeting be represented by the tuple
+$m=(f,\ell,\mathcal{S})$, where $f$ is the media file, $\ell$ is the detected
+language, and $\mathcal{S}$ is the ordered set of timestamped transcript
+segments. The following procedure is applied to every meeting:
+
+1. **Validate and normalize the input.** The upload service checks the file
+   extension and media availability. FFmpeg removes video streams, mixes
+   multiple channels to mono, resamples the signal to 16 kHz, and encodes
+   signed 16-bit PCM WAV. Consequently, the ASR component receives the same
+   acoustic representation for all supported input containers.
+2. **Generate timestamped speech segments.** Faster-Whisper is loaded once per
+   worker and executes beam-search decoding with beam size five. Voice activity
+   detection removes pauses longer than 500 ms. For each speech segment
+   $s_i$, the system stores $(i,t_i^{start},t_i^{end},x_i)$, where $x_i$ is
+   the original segment text. The complete transcript is the ordered
+   whitespace-joined sequence of $x_i$; the original segment text is retained
+   for evidence verification.
+3. **Construct linguistic representations.** spaCy performs sentence
+   segmentation, tokenization, part-of-speech tagging, dependency parsing, and
+   lemmatization. A combined spaCy--NLTK stop-word set is used only for
+   statistical features. Conversationally meaningful auxiliaries, negation,
+   and interrogatives are preserved in classification and rule-based
+   extraction. Filler removal is therefore not allowed to modify the evidence
+   transcript.
+4. **Run parallel classical NLP analyses.** The parsed document is passed to
+   (i) an EntityRuler-augmented spaCy NER pipeline, (ii) the discourse-act
+   classifier, and (iii) topic analysis. The NER stage extracts people,
+   organizations, dates, locations, and products, while explicit patterns
+   extend recognition to technologies and project identifiers. Topic analysis
+   computes corpus-level TF--IDF keywords and applies LDA (or NMF when
+   configured) with a fixed random state. These outputs are retained as
+   interpretable intermediate artifacts rather than hidden inside the LLM
+   prompt.
+5. **Classify discourse acts.** The classifier is trained from the
+   project-labelled sentence corpus using a persisted scikit-learn pipeline.
+   The pipeline uses sublinear TF--IDF word $n$-grams ($n=1,\ldots,3$), a
+   20,000-feature limit, balanced class weights, and multinomial Logistic
+   Regression. Its probability maximum is recorded as a model confidence
+   value. High-precision action and decision rules are then applied to the
+   prediction: explicit decision patterns take precedence, followed by
+   obligation/assignment patterns, question markers and unresolved-issue
+   patterns. Thus, the statistical classifier supplies broad coverage while
+   rules protect precision for operational fields.
+6. **Extract structured meeting intelligence.** For longer transcripts, the
+   ordered segment list is partitioned into deterministic byte-bounded chunks
+   with one-turn overlap. Each chunk is sent to the structured extraction
+   model with the same schema and the same evidence requirements. The model
+   must return actions, follow-ups, decisions, questions, topics, entities,
+   summary bullets, and evidence objects. An action can contain an owner,
+   deadline, priority, and status; missing values remain null rather than
+   being inferred. Questions are marked resolved only when an answer and
+   answer evidence are present.
+7. **Validate evidence before persistence.** A candidate is accepted only if
+   its evidence is a non-empty, contiguous quote in the normalized source
+   transcript and its segment identifiers are valid integers within the
+   transcript bounds. The quoted text must also occur in the joined span from
+   the minimum to maximum cited segment. Invalid schema responses, incomplete
+   output, unsupported evidence, and provider failures are rejected as
+   analysis errors; they are never converted into an apparently successful
+   empty report.
+8. **Merge and reconcile candidates.** Chunk reports are merged locally in
+   source order, then semantically deduplicated only when normalized task
+   terms overlap and the evidence identifies the same event. Each item receives
+   a stable identifier
+   \[
+   id(e)=\operatorname{Trunc}_{24}\left(
+   \operatorname{SHA256}(m_{\mathrm{id}}\Vert c(e)\Vert
+   \operatorname{sort}(\mathcal{S}_e)\Vert q(e))\right),
+   \]
+   where $c(e)$ is the category and $q(e)$ is the normalized payload used
+   only to disambiguate distinct insights sharing a turn. Existing items are
+   matched by source-segment overlap and normalized semantic similarity. The
+   previous AI baseline is stored separately from `user_edits`, so edited
+   task text, ownership, deadlines, status, and confirmation state survive
+   re-analysis.
+9. **Persist an auditable state.** The system stores the canonical input,
+   candidate output, previous output, analysis manifest, and stage counts
+   (`generated`, `parsed`, `validated`, `evidence_matched`,
+   `deduplicated`, and `persisted`). The input manifest includes normalized
+   transcript content and language. The configuration manifest includes model,
+   prompt and schema hashes, decoding parameters, token budget, chunk policy,
+   and analysis version. A cached report is reused only when both manifests
+   match; an explicit re-analysis bypasses the cache but follows the same
+   validation and reconciliation path.
+
+The deterministic controls do not claim that a remote generative provider is
+mathematically deterministic. Instead, they make the application state
+deterministic with respect to the canonical input, versioned configuration,
+source evidence, and reconciliation policy. This distinction is important:
+provider wording may vary, but unsupported candidates are rejected, valid
+source-anchored items receive stable identities, and prior human edits are not
+silently overwritten.
+
+### H. Summary Generation and Output Contract
+
+The default summary is extractive. After removing duplicate, very short, and
+routine conversational sentences, the system computes TF--IDF vectors,
+centroid similarity, and a redundancy penalty. Candidate sentence $u_i$ is
+ranked using
+\[
+\operatorname{score}(u_i)=
+\cos(\mathbf{v}_i,\mathbf{c})
+-0.65\max_{u_j\in K}\cos(\mathbf{v}_i,\mathbf{v}_j)
+\gamma_i ,
+\]
+where $K$ is the selected set and $\gamma_i$ adds weight to actions,
+decisions, risks, deadlines, and unresolved issues. Selected sentences are
+returned in their original transcript order, preserving verbatim grounding.
+An optional BART/T5 transformer path uses sentence-boundary chunks and is
+treated as a human-review draft; it does not replace the grounded extractive
+result when the transformer is unavailable or fails.
+
+The final Pydantic output contract contains summary bullets, key takeaway,
+actions, follow-ups, decisions, questions, topics, entities, meeting
+metadata, and limitations. Every displayed insight retains its evidence,
+source segment identifiers, and—when available—the first segment timestamp.
+This contract is shared by the API, dashboard, and PDF exporter, preventing
+presentation-layer transformations from changing analytical meaning.
+
 ## IV. Experimental Setup
 
 ```

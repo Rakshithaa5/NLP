@@ -1,0 +1,14 @@
+{
+  "timed_runs": 9,
+  "summary_recomputed": true,
+  "prediction_hashes_verified": 9,
+  "consistency_hashes_verified": 10,
+  "overlap_ratios_checked": 32,
+  "figure_count": 5,
+  "measured_figures": 2,
+  "template_figures": 3,
+  "table_count": 6,
+  "measured_tables": 3,
+  "template_tables": 3,
+  "pdf": "C:\\Users\\raksh\\NLP\\graphs with tables.pdf"
+}
