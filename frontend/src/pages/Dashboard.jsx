@@ -105,6 +105,7 @@ function MeetingDashboard({ fileId }) {
   async function saveAction(index, details) {
     const result = await updateActionDetails(fileId, index, {
       ...details,
+      owner: analysis.intelligence.action_items[index].owner || '',
       deadline: details.deadline === data.intelligence.action_items[index].deadline
         ? analysis.intelligence.action_items[index].deadline : details.deadline,
       task: analysis.intelligence.action_items[index].task,

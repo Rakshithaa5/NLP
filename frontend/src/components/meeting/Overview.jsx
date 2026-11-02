@@ -26,35 +26,33 @@ export function MeetingSummary({intelligence}) {
 }
 function ActionItem({item, index, onSaveAction, editingDisabled, ...evidenceProps}) {
   const [editing, setEditing] = useState(false)
-  const [owner, setOwner] = useState('')
   const [deadline, setDeadline] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   function edit() {
-    setOwner(text(item.owner)); setDeadline(text(item.deadline))
+    setDeadline(text(item.deadline))
     setError(''); setSaved(false); setEditing(true)
   }
   async function submit(event) {
     event.preventDefault()
     if (saving || editingDisabled) return
     setSaving(true); setError('')
-    try { await onSaveAction(index, {owner, deadline}); setEditing(false); setSaved(true) }
+    try { await onSaveAction(index, {deadline}); setEditing(false); setSaved(true) }
     catch (e) { setError(e.message || 'Could not save changes. Please retry.') }
     finally { setSaving(false) }
   }
   return <article className="mi-action">
     <span className="mi-item-index">{String(index + 1).padStart(2, '0')}</span>
     <div className="mi-action-body"><h3 dir="auto">{text(item.task)}</h3>
-      <dl className="mi-action-meta"><div><dt>Owner</dt><dd>{text(item.owner) || 'Unassigned'}</dd></div>{text(item.status) && <div><dt>Status</dt><dd>{item.status}</dd></div>}<div><dt>Deadline{item.manually_edited && ' (manually edited)'}</dt><dd>{text(item.deadline) || 'Not specified'}</dd></div><div><dt>Priority</dt><dd>{text(item.priority) || 'Not specified'}</dd></div></dl>
+      <dl className="mi-action-meta"><div><dt>Deadline{item.manually_edited && ' (manually edited)'}</dt><dd>{text(item.deadline) || 'Not specified'}</dd></div><div><dt>Priority</dt><dd>{text(item.priority) || 'Not specified'}</dd></div></dl>
       {editing ? <form className="mi-action-editor" onSubmit={submit}>
-        <label>Owner<input value={owner} maxLength={200} onChange={e => setOwner(e.target.value)} disabled={saving} placeholder="Enter a name" /></label>
         <label>Deadline<input value={deadline} maxLength={200} onChange={e => setDeadline(e.target.value)} disabled={saving} placeholder="e.g. 25 Oct 2026 or next Friday" /></label>
-        <p className="mi-caption mi-muted">These details are entered manually. Leave a field blank to clear it.</p>
+        <p className="mi-caption mi-muted">Set or correct the deadline manually. Leave it blank to clear it.</p>
         {error && <p role="alert" className="mi-error">{error}</p>}
-        <div className="mi-action-editor-buttons"><button type="submit" disabled={saving || editingDisabled}>{saving ? 'Saving...' : 'Save details'}</button><button type="button" disabled={saving} onClick={() => setEditing(false)}>Cancel</button></div>
-      </form> : onSaveAction && <button type="button" className="mi-link" disabled={editingDisabled} onClick={edit} aria-label={`Edit details for action ${index + 1}`}>Edit details</button>}
-      {saved && <p role="status" className="mi-caption">Details saved.</p>}
+        <div className="mi-action-editor-buttons"><button type="submit" disabled={saving || editingDisabled}>{saving ? 'Saving...' : 'Save deadline'}</button><button type="button" disabled={saving} onClick={() => setEditing(false)}>Cancel</button></div>
+      </form> : onSaveAction && <button type="button" className="mi-link" disabled={editingDisabled} onClick={edit} aria-label={`Edit deadline for action ${index + 1}`}>Edit deadline</button>}
+      {saved && <p role="status" className="mi-caption">Deadline saved.</p>}
       <Evidence item={item} {...evidenceProps}/>
     </div>
   </article>
