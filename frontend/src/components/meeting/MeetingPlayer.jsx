@@ -6,6 +6,7 @@ const RATES = [0.75, 1, 1.25, 1.5, 2]
 
 export default function MeetingPlayer({ fileId, meeting, onActiveSegmentChange, seekRequest, onSeekHandled }) {
   const audioRef = useRef(null)
+  const [mediaError, setMediaError] = useState('')
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(Number.isFinite(meeting?.duration) ? meeting.duration : 0)
@@ -85,11 +86,12 @@ export default function MeetingPlayer({ fileId, meeting, onActiveSegmentChange, 
     if (!media) return
     try {
       if (media.paused) {
-        await media.play()
+        await media.play(); setMediaError('')
       } else {
         media.pause()
       }
     } catch {
+      setMediaError('Playback could not start. Check the recording connection and try Play again.')
       setIsPlaying(false)
     }
   }
@@ -113,12 +115,13 @@ export default function MeetingPlayer({ fileId, meeting, onActiveSegmentChange, 
 
   return (
     <div id="meeting-player" className="mi-player-shell">
-      <div className="mi-player">
+      <div className="mi-player"><div className="mi-section-title"><h2>Recording</h2><span className="mi-eyebrow">Source recording</span></div>
+        {mediaError && <p role="alert" className="mi-chat-error">{mediaError}</p>}
         <div className="mi-player-media" aria-label="Meeting media player">
           {mimeType === 'video' ? (
-            <video ref={audioRef} src={mediaUrl} controls={false} preload="metadata" playsInline />
+            <video ref={audioRef} src={mediaUrl} onError={() => setMediaError('Recording unavailable. Check your connection and try again.')} onLoadedData={() => setMediaError('')} controls={false} preload="metadata" playsInline />
           ) : (
-            <audio ref={audioRef} src={mediaUrl} controls={false} preload="metadata" />
+            <audio ref={audioRef} src={mediaUrl} onError={() => setMediaError('Recording unavailable. Check your connection and try again.')} onLoadedData={() => setMediaError('')} controls={false} preload="metadata" />
           )}
         </div>
         <div className="mi-player-controls">

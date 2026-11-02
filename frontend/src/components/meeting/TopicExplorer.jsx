@@ -13,8 +13,8 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
 // ── Colour palette for canonical topics (deterministic by id) ────────────────
 const TOPIC_COLORS = [
-  '#2db55d', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444',
-  '#06b6d4', '#ec4899', '#10b981', '#f97316', '#6366f1',
+  '#347447', '#587C96', '#A17B32', '#857397', '#A66351',
+  '#4F8582', '#A26C81', '#608457', '#AD7953', '#687CA0',
 ]
 function topicColor(id) { return TOPIC_COLORS[id % TOPIC_COLORS.length] }
 
@@ -165,7 +165,7 @@ function TopicDetail({ canonicalTopic, segments, onJump }) {
             </p>
             {seg.related_decisions?.length > 0 && (
               <div style={{ marginBottom: 6 }}>
-                <span className="mi-eyebrow" style={{ color: '#059669' }}>Decisions</span>
+                <span className="mi-eyebrow" style={{ color: 'var(--clr-primary-h)' }}>Decisions</span>
                 {seg.related_decisions.map((d, j) => (
                   <p key={j} style={{ fontSize: 12, color: 'var(--clr-text-muted)', margin: '2px 0' }}>• {d}</p>
                 ))}
@@ -173,7 +173,7 @@ function TopicDetail({ canonicalTopic, segments, onJump }) {
             )}
             {seg.related_actions?.length > 0 && (
               <div style={{ marginBottom: 6 }}>
-                <span className="mi-eyebrow" style={{ color: '#2563eb' }}>Actions</span>
+                <span className="mi-eyebrow" style={{ color: '#466B86' }}>Actions</span>
                 {seg.related_actions.map((a, j) => (
                   <p key={j} style={{ fontSize: 12, color: 'var(--clr-text-muted)', margin: '2px 0' }}>• {a}</p>
                 ))}
@@ -181,7 +181,7 @@ function TopicDetail({ canonicalTopic, segments, onJump }) {
             )}
             {seg.related_questions?.length > 0 && (
               <div>
-                <span className="mi-eyebrow" style={{ color: '#d97706' }}>Open questions</span>
+                <span className="mi-eyebrow" style={{ color: '#866020' }}>Open questions</span>
                 {seg.related_questions.map((q, j) => (
                   <p key={j} style={{ fontSize: 12, color: 'var(--clr-text-muted)', margin: '2px 0' }}>• {q}</p>
                 ))}

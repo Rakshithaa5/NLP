@@ -3,7 +3,7 @@ import { list, text, timestamp } from './data'
 import { languageName } from './translation'
 
 export function Meter({label, count, percentage}) {
-  return <div className="mi-meter"><div><span>{label}</span><span>{count}{percentage !== null ? ` ? ${Math.round(percentage)}%` : ''}</span></div>{percentage !== null && <div className="mi-meter-track"><div style={{width: `${Math.min(100, Math.max(0, percentage))}%`}}/></div>}</div>
+  return <div className="mi-meter"><div><span>{label}</span><span>{count}{percentage !== null ? ` · ${Math.round(percentage)}%` : ''}</span></div>{percentage !== null && <div className="mi-meter-track"><div style={{width: `${Math.min(100, Math.max(0, percentage))}%`}}/></div>}</div>
 }
 export default function Analytics({analysis, meeting}) {
   const counts = {

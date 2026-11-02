@@ -108,6 +108,7 @@ export default function History() {
   const [meetings, setMeetings] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [reload, setReload] = useState(0)
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState('uploaded_at')
 
@@ -116,7 +117,7 @@ export default function History() {
       .then(res => setMeetings(res.meetings || []))
       .catch(e => setError(e.message || 'Failed to load meeting history.'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [reload])
 
   const totalDuration = meetings.reduce((s, m) => s + (m.duration || 0), 0)
   const avgDuration   = meetings.length ? totalDuration / meetings.length : 0
@@ -131,7 +132,7 @@ export default function History() {
     })
 
   if (loading) return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 14 }}>
+    <div role="status" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 14 }}>
       <svg className="animate-spin" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--clr-primary)" strokeWidth="2.5" strokeLinecap="round">
         <circle cx="12" cy="12" r="10" strokeOpacity="0.15"/>
         <path d="M12 2a10 10 0 0 1 10 10"/>
@@ -148,7 +149,7 @@ export default function History() {
         </svg>
       </div>
       <p style={{ color: 'var(--clr-error)', fontWeight: 600, marginBottom: 8 }}>{error}</p>
-      <p style={{ color: 'var(--clr-text-muted)', fontSize: 13 }}>Check that the backend is running and try again.</p>
+      <p style={{ color: 'var(--clr-text-muted)', fontSize: 13 }}>Check that the backend is running and try again.</p><button className="btn btn-secondary" onClick={() => {setError(null);setLoading(true);setReload(v => v + 1)}}>Retry</button>
     </div>
   )
 
@@ -186,14 +187,14 @@ export default function History() {
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input
-            id="history-search" type="text" placeholder="Search by filename…"
+            id="history-search" aria-label="Search meetings by filename" type="search" placeholder="Search by filename…"
             value={search} onChange={e => setSearch(e.target.value)}
             style={{ width: '100%', padding: '9px 14px 9px 32px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--clr-border-2)', background: 'var(--clr-surface)', color: 'var(--clr-text)', fontSize: 13, outline: 'none' }}
           />
         </div>
         <div style={{ display: 'flex', gap: 2, background: 'var(--clr-surface-2)', borderRadius: 'var(--radius-sm)', padding: 3, border: '1px solid var(--clr-border)' }}>
           {[['uploaded_at','Date'],['duration','Duration'],['filename','Name']].map(([key, label]) => (
-            <button key={key} id={`sort-${key}`} onClick={() => setSortKey(key)} style={{
+            <button key={key} aria-pressed={sortKey === key} id={`sort-${key}`} onClick={() => setSortKey(key)} style={{
               padding: '6px 12px', borderRadius: 6, border: 'none', fontSize: 12, cursor: 'pointer',
               background: sortKey === key ? 'var(--clr-surface)' : 'transparent',
               color: sortKey === key ? 'var(--clr-text)' : 'var(--clr-text-muted)',

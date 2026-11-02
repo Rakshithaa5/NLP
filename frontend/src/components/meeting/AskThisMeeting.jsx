@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { askMeeting } from '../../services/api'
-import { timestamp } from './data'
+import { timestamp, number } from './data'
 import { useEnglishDisplay, useMeetingLanguage } from './translationHooks'
 
 const COPY = {
@@ -95,15 +95,17 @@ export default function AskThisMeeting({fileId, meeting, onJump}) {
       {message.contextLimited && <p className="mi-muted">{copy.limited}</p>}
       {message.role === 'assistant' && message.evidence?.length > 0 && <div className="mi-chat-evidence"><span className="mi-muted">{copy.evidence}</span>{message.evidence.map(id => {
         const index = segmentIndex(id), segment = index == null ? null : meeting.segments[index]
-        return segment ? <button type="button" className="mi-link" key={id} onClick={() => { close(); onJump({segment_ids: [index], timestamp: segment.start}) }}>▶ {timestamp(segment.start)}</button> : null
+        return segment ? <button type="button" className="mi-link" key={id} onClick={() => { close(); onJump({segment_ids: [index], timestamp: segment.start}) }}>{number(segment.start) !== null ? `▶ ${timestamp(segment.start)}` : `View excerpt ${index + 1}`}</button> : null
       })}</div>}
     </article>)}</div>}
       </div>
+    {busy && <p role="status" className="chat-loading">Finding an answer in this meeting…</p>}
     {error && <div role="alert" className="mi-chat-error">{error}</div>}
     <form className="mi-chat-form" onSubmit={event => {event.preventDefault(); submit()}}><input ref={input} aria-label={copy.input} value={question} onChange={event => setQuestion(event.target.value)} placeholder={copy.placeholder} disabled={busy}/><button className="mi-primary" type="submit" disabled={busy || remaining > 0 || !question.trim()}>{busy ? copy.asking : remaining > 0 ? copy.retry(remaining) : copy.ask}</button></form>
     </section>
     <button ref={launcher} type="button" className="mi-assistant-launcher" aria-label={open ? copy.close : copy.open} aria-expanded={open} aria-controls="meeting-assistant" onClick={() => open ? close() : setOpen(true)}>
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v3M9 3h6"/><rect x="4" y="6" width="16" height="14" rx="5"/><path d="M1 11v4m22-4v4M9 15h6"/><circle cx="8.5" cy="11" r=".75" fill="currentColor"/><circle cx="15.5" cy="11" r=".75" fill="currentColor"/></svg>
+      <span>{open ? copy.close : copy.title}</span><span aria-hidden="true">{open ? '−' : '+'}</span>
     </button>
   </div>
 }

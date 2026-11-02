@@ -33,3 +33,10 @@ test('resolveEvidenceTarget keeps evidence navigation deterministic', () => {
   assert.equal(target.seconds, 22)
   assert.equal(target.reason, 'segment-id')
 })
+
+
+test('untimed evidence selects its transcript without inventing a playback timestamp', () => {
+  const segments = [{id: 0, start: null, end: null, text: 'Original meeting excerpt'}]
+  assert.equal(resolveEvidenceTarget({segment_ids: [0]}, segments).seconds, null)
+  assert.equal(resolveEvidenceTarget({evidence: 'Original meeting excerpt'}, segments).seconds, null)
+})

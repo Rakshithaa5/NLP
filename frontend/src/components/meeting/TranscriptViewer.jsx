@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Panel, Empty } from './Overview'
-import { list, timestamp } from './data'
+import { list, timestamp, number } from './data'
 import { useMeetingLanguage } from './translationHooks'
 
 const getRangeLabel = segment => segment.start !== null && Number.isFinite(segment.start) ? timestamp(segment.start) : 'No timestamp'
@@ -34,7 +34,7 @@ export default function TranscriptViewer({meeting, intelligence, target, activeS
     if (target?.id == null) return
     const timer = setTimeout(() => {
       const node = container.current?.querySelector(`[data-segment="${target.id}"]`)
-      node?.scrollIntoView({block: 'center', behavior: 'smooth'}); node?.focus({preventScroll: true})
+      node?.scrollIntoView({block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'}); node?.focus({preventScroll: true})
     }, 50)
     return () => clearTimeout(timer)
   }, [target])
@@ -43,7 +43,7 @@ export default function TranscriptViewer({meeting, intelligence, target, activeS
     if (!autoFollow || activeSegmentId == null) return
     const timer = setTimeout(() => {
       const node = container.current?.querySelector(`[data-segment="${activeSegmentId}"]`)
-      node?.scrollIntoView({block: 'center', behavior: 'smooth'})
+      node?.scrollIntoView({block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'})
     }, 120)
     return () => clearTimeout(timer)
   }, [activeSegmentId, autoFollow])
@@ -63,13 +63,13 @@ export default function TranscriptViewer({meeting, intelligence, target, activeS
   return <Panel title="Transcript" subtitle={english ? 'English translation of the recording. Original segment timestamps are preserved.' : 'Original recording text. Timestamps refer to transcript segments, not audio playback.'}>
     <div className="mi-transcript-controls"><label className="mi-search"><span>Search transcript</span><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Find a word or phrase..."/></label>
     </div>
-    <div className="mi-filter-row" aria-label="Filter transcript">{['All', 'Actions', 'Decisions', 'Questions'].map(label => <button key={label} aria-pressed={filter === label} onClick={() => setFilter(label)}>{label}</button>)}<span className="mi-muted">{visible.length} of {segments.length} segments</span>{!autoFollow && <button className="mi-follow" type="button" onClick={() => { setAutoFollow(true); if (activeSegmentId != null) setTimeout(() => container.current?.querySelector(`[data-segment="${activeSegmentId}"]`)?.scrollIntoView({block: 'center', behavior: 'smooth'}), 60) }}>Resume following</button>}</div>
+    <div className="mi-filter-row" aria-label="Filter transcript">{['All', 'Actions', 'Decisions', 'Questions'].map(label => <button key={label} aria-pressed={filter === label} onClick={() => setFilter(label)}>{label}</button>)}<span className="mi-muted">{visible.length} of {segments.length} segments</span>{!autoFollow && <button className="mi-follow" type="button" onClick={() => { setAutoFollow(true); if (activeSegmentId != null) setTimeout(() => container.current?.querySelector(`[data-segment="${activeSegmentId}"]`)?.scrollIntoView({block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'}), 60) }}>Resume following</button>}</div>
     <div className="mi-transcript" ref={container} onScroll={handleScroll}>{!visible.length ? <Empty>{segments.length ? 'No transcript segments match these filters.' : 'No transcript is available.'}</Empty> : visible.map(s => {
       const isActive = activeSegmentId === s.id
       const isEvidence = selectedEvidenceSegmentIds.includes(s.id)
       const handleSegmentJump = () => {
         onSegmentSelect?.(s.id)
-        onSeek?.(s.start, true)
+        if (number(s.start) !== null) onSeek?.(s.start, true)
       }
       return <article key={s.id} data-segment={s.id} tabIndex={-1} className={`mi-segment ${target?.id === s.id ? 'mi-segment-selected' : ''} ${isActive ? 'mi-segment-active' : ''} ${isEvidence ? 'mi-segment-evidence' : ''}`} onClick={handleSegmentJump} onKeyDown={event => {
         if ((event.key === 'Enter' || event.key === ' ') && !event.defaultPrevented) {
@@ -78,9 +78,9 @@ export default function TranscriptViewer({meeting, intelligence, target, activeS
         }
       }}>
         <div className="mi-segment-meta">
-          <button type="button" className="mi-timestamp-button" aria-label={`Play from ${getRangeLabel(s)}`} onClick={event => { event.stopPropagation(); onSeek?.(s.start, true) }}>
+          {number(s.start) !== null ? <button type="button" className="mi-timestamp-button" aria-label={`Play from ${getRangeLabel(s)}`} onClick={event => { event.stopPropagation(); onSeek?.(s.start, true) }}>
             {getRangeLabel(s)}
-          </button>
+          </button> : <span>No timestamp</span>}
           {[...(labels.get(s.id) || [])].map(label => <span className="mi-pill" key={label}>{label}</span>)}
         </div>
         <p dir="auto"><Highlight value={s.text} query={needle}/></p>

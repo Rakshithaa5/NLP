@@ -13,14 +13,6 @@ const ACCEPTED_MIME = [
 ]
 const MAX_MB = 500
 
-function fmtDuration(secs) {
-  const h = Math.floor(secs / 3600)
-  const m = Math.floor((secs % 3600) / 60)
-  const s = Math.floor(secs % 60)
-  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
-  return `${m}:${String(s).padStart(2,'0')}`
-}
-
 function fmtBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
@@ -83,7 +75,9 @@ export default function UploadCard({ onSuccess, onError }) {
       aria-label="Upload meeting recording — click or drag a file here"
       id="upload-zone"
       onClick={() => !isBusy && inputRef.current?.click()}
-      onKeyDown={(e) => e.key === 'Enter' && !isBusy && inputRef.current?.click()}
+      onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); if (!isBusy) inputRef.current?.click() } }}
+      aria-busy={isBusy}
+      aria-disabled={isBusy}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
       onDragOver={onDragOver}
@@ -139,7 +133,7 @@ export default function UploadCard({ onSuccess, onError }) {
         </div>
 
         {/* Content */}
-        <div style={{ textAlign: 'center' }}>
+        <div aria-live="polite" style={{ textAlign: 'center', overflowWrap: 'anywhere' }}>
           {isIdle && (
             <>
               <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--clr-text)', marginBottom: 8, fontFamily: '"Plus Jakarta Sans",sans-serif' }}>
@@ -172,10 +166,10 @@ export default function UploadCard({ onSuccess, onError }) {
           {isProcessing && (
             <>
               <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--clr-primary-h)', marginBottom: 6 }}>
-                Transcribing with Faster-Whisper…
+                Preparing your transcript…
               </p>
               <p style={{ fontSize: 13, color: 'var(--clr-text-muted)' }}>
-                This may take a minute for longer recordings.
+                {selectedFile?.name} — longer recordings may take several minutes.
               </p>
             </>
           )}

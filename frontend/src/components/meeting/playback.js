@@ -75,7 +75,7 @@ export function resolveEvidenceTarget(evidence, segments) {
         })
 
     if (target) {
-      const seconds = Number.isFinite(target.start) ? target.start : timestamp ?? 0
+      const seconds = Number.isFinite(target.start) ? target.start : timestamp
       return {
         segmentId: target.id ?? target.__index ?? 0,
         segmentIds: candidateIds.map(value => value),
@@ -107,7 +107,7 @@ export function resolveEvidenceTarget(evidence, segments) {
         return {
           segmentId: segment.id ?? segment.__index ?? 0,
           segmentIds: [segment.id ?? segment.__index ?? 0],
-          seconds: Number.isFinite(segment.start) ? segment.start : 0,
+          seconds: Number.isFinite(segment.start) ? segment.start : null,
           reason: 'text'
         }
       }
