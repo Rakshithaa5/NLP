@@ -118,10 +118,18 @@ function MeetingDashboard({ fileId }) {
   function jump(value) {
     if (typeof value === 'object' && value !== null) {
       const resolved = resolveEvidenceTarget(value, meeting.segments)
+      const seconds = Number.isFinite(value.playbackSeconds) ? value.playbackSeconds : resolved?.seconds
+      if (Number.isFinite(seconds) && seconds >= 0) {
+        requestSeek(seconds, true)
+        const player = document.getElementById('meeting-player')
+        player?.focus({preventScroll: true})
+        player?.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center'})
+        return
+      }
       if (!resolved) { setTarget({ id: null, nonce: Date.now() }); setSelectedEvidenceSegmentIds([]); return }
       setTarget({ id: resolved.segmentId, nonce: Date.now() })
       setSelectedEvidenceSegmentIds(Array.isArray(resolved.segmentIds) ? resolved.segmentIds : [resolved.segmentId])
-      requestSeek(resolved.seconds, true); activate('transcript'); return
+      activate('transcript'); return
     }
     setTarget({ id: value, nonce: Date.now() }); setSelectedEvidenceSegmentIds([])
     const segment = meeting.segments.find(item => item.id === value)

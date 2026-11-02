@@ -114,7 +114,7 @@ export default function MeetingPlayer({ fileId, meeting, onActiveSegmentChange, 
   }
 
   return (
-    <div id="meeting-player" className="mi-player-shell">
+    <div id="meeting-player" tabIndex={-1} className="mi-player-shell">
       <div className="mi-player"><div className="mi-section-title"><h2>Recording</h2><span className="mi-eyebrow">Source recording</span></div>
         {mediaError && <p role="alert" className="mi-chat-error">{mediaError}</p>}
         <div className="mi-player-media" aria-label="Meeting media player">

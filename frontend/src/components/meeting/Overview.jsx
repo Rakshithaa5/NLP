@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ActionNote from './ActionNote'
 import { actionNoteKey } from './notes'
+import { resolveEvidenceTarget } from './playback'
 import { list, text, timestamp, number } from './data'
 
 export function Panel({title, count, children, className = '', subtitle, id}) {
@@ -10,13 +11,15 @@ export function Empty({children}) { return <p className="mi-empty">{children}</p
 export function Evidence({item, onJump, segments}) {
   const quote = text(item.evidence)
   const ids = list(item.segment_ids).filter(id => Number.isInteger(id) && segments[id]?.text)
-  const hasTarget = ids.length > 0 || number(item.timestamp) !== null
+  const resolved = resolveEvidenceTarget(item, segments)
+  const seconds = number(resolved?.seconds) ?? number(item.timestamp)
+  const hasTarget = ids.length > 0 || seconds !== null
   if (!quote && !hasTarget) return null
   return <details className="mi-evidence"><summary>Transcript evidence</summary><blockquote dir="auto">{quote || 'Evidence is available in the transcript.'}</blockquote>
-    {hasTarget ? (
-      <button type="button" className="mi-link" onClick={() => onJump(item)}>View in transcript{number(item.timestamp) !== null ? ` at ${timestamp(item.timestamp)}` : ''} <span aria-hidden="true">&#8599;</span></button>
+    {seconds !== null ? (
+      <button type="button" className="mi-link" onClick={() => onJump({...item, playbackSeconds: seconds})}>Play recording at {timestamp(seconds)} <span aria-hidden="true">&#8599;</span></button>
     ) : (
-      <button type="button" className="mi-link mi-link-disabled" disabled>Evidence unavailable</button>
+      <button type="button" className="mi-link mi-link-disabled" disabled>Recording timestamp unavailable</button>
     )}
   </details>
 }
