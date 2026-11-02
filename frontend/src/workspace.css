@@ -120,14 +120,22 @@ body {font-size:14px}
 .report-overview #overview-entities {grid-column:2;grid-row:6}
 .report-overview .mi-panel {margin:0}
 
-.mi-assistant {position:static;display:flex;flex-direction:column;margin-bottom:20px;z-index:auto}
-.mi-assistant .mi-assistant-launcher {order:-1;width:100%;height:auto;min-height:48px;justify-content:flex-start;gap:12px;margin:0;border:1px solid var(--clr-border);border-radius:12px;padding:12px 16px;background:var(--clr-primary-bg);color:var(--clr-primary-h);box-shadow:none}
-.mi-assistant-launcher span:last-child {margin-left:auto}
+/* Floating assistant: keep its mounted conversation when collapsed. */
+.mi-assistant {position:fixed;right:max(24px,env(safe-area-inset-right));bottom:max(24px,env(safe-area-inset-bottom));z-index:80;display:flex;flex-direction:column;align-items:flex-end;gap:12px;margin:0;max-width:calc(100vw - 32px)}
+.mi-assistant .mi-assistant-launcher {order:0;width:auto;height:auto;min-height:50px;justify-content:center;gap:10px;margin:0;border:1px solid var(--clr-primary);border-radius:28px;padding:12px 18px;background:var(--clr-primary);color:white;box-shadow:0 5px 20px #20252224}
+.mi-assistant .mi-assistant-launcher:hover {background:var(--clr-primary-h);color:white}
 .mi-assistant-launcher svg {width:22px;height:22px}
-.mi-assistant-window {width:100%;max-height:560px;margin:10px 0 0;border-radius:14px;box-shadow:var(--shadow-card)}
-.mi-assistant-header {background:var(--clr-bg)}
-.mi-chat-form {background:white}
-.chat-loading {padding:12px 20px;color:var(--clr-text-muted);font-size:12px}
+.mi-assistant-window {width:min(420px,calc(100vw - 32px));height:min(560px,calc(100dvh - 116px));max-height:calc(100dvh - 116px);margin:0;border-radius:16px;box-shadow:0 12px 40px #20252226;transform-origin:bottom right;animation:chat-panel-in 180ms ease-out}
+.mi-assistant-header {background:var(--clr-bg);flex-shrink:0}
+.mi-assistant-body {flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.mi-assistant-window .mi-chat-messages {max-height:none;overflow:visible}
+.mi-assistant-window .mi-chat-form {background:white;flex:0 0 auto;flex-wrap:nowrap}
+.mi-assistant-window .mi-chat-form input {flex:1;min-width:0}
+.mi-assistant-window .mi-chat-form button {flex-shrink:0}
+.mi-assistant-window .mi-chat-error {max-height:90px;flex-shrink:0}
+.chat-loading {padding:10px 20px;color:var(--clr-text-muted);font-size:12px;flex-shrink:0}
+.dash-inner {padding-bottom:100px}
+@keyframes chat-panel-in {from {opacity:0;transform:translateY(8px) scale(.99)} to {opacity:1;transform:none}}
 
 @media(min-width:901px) and (max-width:1150px) {.upload-layout {grid-template-columns:1fr}
 .report-overview {column-gap:16px}
@@ -167,3 +175,30 @@ body {font-size:14px}
 html {scroll-behavior:auto}
 }
 
+
+/* Compact branding leaves the upload card close to the top of the page. */
+.home-branding {text-align:center;margin:0 auto 30px;padding:4px 0 0}
+.home-branding .hero-brand {display:flex;justify-content:center;align-items:center;gap:14px;font-size:clamp(34px,4.5vw,54px);font-weight:750;letter-spacing:-1.8px;margin:0 0 18px;position:relative}
+.hero-logo {display:grid;place-items:center;width:58px;height:64px;background:var(--clr-primary);color:white;border-radius:15px;transform:rotate(-5deg);box-shadow:3px 4px 0 #E3EBD9;flex-shrink:0}
+.brand-spark {color:#A68B37;align-self:flex-start;margin-left:-6px}
+.home-branding .hero-tagline {font-size:clamp(17px,2vw,22px);font-weight:600;color:var(--clr-text);line-height:1.5;margin:0 0 10px}
+.home-branding .hero-description {font-size:14px;line-height:1.7;color:var(--clr-text-muted);margin:0}
+.home-workspace .upload-zone {padding-block:34px}
+.meeting-preview {width:100%;max-width:1040px;margin-inline:auto;padding:36px 32px 72px}
+.meeting-preview .segment-item {padding:16px 20px;cursor:default}
+.meeting-preview .segment-text {font-size:15px;line-height:1.9;min-width:0;overflow-wrap:anywhere}
+.meeting-preview .segment-timestamp {flex-shrink:0;padding-top:6px}
+.meeting-preview .preview-segments {max-height:65vh!important;min-height:280px}
+.meeting-preview .preview-full-text {padding-top:38px}
+@media(max-width:600px) {
+  .home-branding {margin-bottom:26px}
+  .home-branding .hero-brand {gap:10px;letter-spacing:-1px}
+  .hero-logo {width:44px;height:50px;border-radius:12px}
+  .hero-logo svg {width:30px;height:34px}
+  .brand-spark {width:22px}
+  .meeting-preview {padding:24px 16px 56px}
+  .meeting-preview .segment-item {flex-direction:column;gap:4px;padding:14px 16px}
+  .mi-assistant {right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom))}
+  .mi-assistant-window {height:min(560px,calc(100dvh - 100px));max-height:calc(100dvh - 100px)}
+  .dash-inner {padding-bottom:100px}
+}

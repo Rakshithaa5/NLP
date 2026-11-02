@@ -73,7 +73,7 @@ export default function TranscriptPreview() {
   const segCount  = segments.length
 
   return (
-    <div className="page-container-sm animate-fade-up">
+    <div className="page-container-sm meeting-preview animate-fade-up">
 
       <button id="transcript-back-btn" onClick={() => navigate('/')}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--clr-text-muted)', fontSize: 13, cursor: 'pointer', marginBottom: 28, padding: 0, fontWeight: 500 }}
@@ -139,7 +139,7 @@ export default function TranscriptPreview() {
 
       {/* Segments */}
       {activeTab === 'segments' && (
-        <div style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius-lg)', background: 'var(--clr-surface)', overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
+        <div className="preview-segments" style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius-lg)', background: 'var(--clr-surface)', overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
           {segments.length === 0 ? (
             <p style={{ padding: 24, color: 'var(--clr-text-muted)', textAlign: 'center', fontSize: 14 }}>No segments found.</p>
           ) : segments.map((seg, i) => (
@@ -158,7 +158,7 @@ export default function TranscriptPreview() {
             style={{ position: 'absolute', top: 16, right: 16, padding: '6px 14px', borderRadius: 'var(--radius-sm)', background: copied ? 'var(--clr-primary-bg)' : 'var(--clr-surface-2)', border: `1px solid ${copied ? 'var(--clr-primary-l)' : 'var(--clr-border)'}`, color: copied ? 'var(--clr-primary-h)' : 'var(--clr-text-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all var(--transition)' }}>
             {copied ? '✓ Copied' : 'Copy'}
           </button>
-          <p style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--clr-text-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 500, overflowY: 'auto', paddingRight: 8 }}>
+          <p className="preview-full-text" style={{ fontSize: 15, lineHeight: 1.9, color: 'var(--clr-text-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 500, overflowY: 'auto', paddingRight: 8 }}>
             {full_text || 'No transcript text available.'}
           </p>
         </div>

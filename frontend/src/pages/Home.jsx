@@ -15,7 +15,11 @@ export default function Home() {
     return () => {current = false}
   }, [reload])
   return <div className="page-container home-workspace">
-    <header className="workspace-heading"><p className="mi-eyebrow">Your meeting workspace</p><h1>Make room for <span className="doodle-underline">what matters.</span></h1><p>Bring your recording. Leave with clear notes and next steps.</p></header>
+    <header className="workspace-heading home-branding">
+      <h1 className="hero-brand"><span className="hero-logo" aria-hidden="true"><svg width="38" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><rect x="5" y="3" width="15" height="18" rx="3"/><path d="M3 7h4M3 12h4M3 17h4M10 8h6M10 12h6M10 16h4"/></svg></span><span>Meeting<span className="doodle-underline">Intel</span></span><svg className="brand-spark" aria-hidden="true" width="32" height="34" viewBox="0 0 32 34" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="m5 18 9-3M15 6l-2 5M24 9l-5 5M23 24l-6-4"/></svg></h1>
+      <p className="hero-tagline">Turn conversations into clear next steps.</p>
+      <p className="hero-description">Upload your meeting. Get summaries, action items, decisions, and answers.</p>
+    </header>
     <div className="upload-layout"><section className="upload-section"><div className="section-heading"><span className="step-label">01</span><div><h2>Start a new meeting</h2><p>Upload a recording to create your transcript.</p></div><svg className="upload-doodle" aria-hidden="true" width="64" height="46" viewBox="0 0 64 46" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M5 8c29-15 48 7 35 24-6 7-16 4-13-3 4-9 25-2 30 7m-10-2 10 2-1-10"/></svg></div>
     <UploadCard onSuccess={data => navigate(`/transcript/${data.file_id}`,{state:{transcript:data}})}/>
     <div className="upload-note"><span aria-hidden="true">↗</span><p>You can review the original transcript before running the analysis.</p></div>

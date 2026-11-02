@@ -6,7 +6,7 @@ import { useEnglishDisplay, useMeetingLanguage } from './translationHooks'
 const COPY = {
   en: {
     starters: ['What decisions were made?', 'What are the key action items?', 'What remains unresolved?', 'Summarize this meeting'],
-    title: 'Ask This Meeting', assistant: 'Your meeting assistant', close: 'Close meeting assistant', open: 'Open meeting assistant',
+    title: 'Ask this meeting', assistant: 'Your meeting assistant', close: 'Close meeting assistant', open: 'Open meeting assistant',
     caption: "Answers are grounded only in this meeting's transcript.", you: 'You', answer: 'Meeting answer', evidence: 'Evidence',
     limited: 'Based on selected transcript excerpts; some meeting details may be missing.',
     placeholder: 'Ask about this meeting...', input: 'Ask about this meeting', asking: 'Asking...', ask: 'Ask',
@@ -56,7 +56,7 @@ export default function AskThisMeeting({fileId, meeting, onJump}) {
   }, [open])
   useEffect(() => {
     if (open && messageList.current) messageList.current.scrollTop = messageList.current.scrollHeight
-  }, [messages, busy, open])
+  }, [messages, displayMessages, busy, open])
   function close() {
     setOpen(false)
     launcher.current?.focus()
@@ -87,10 +87,10 @@ export default function AskThisMeeting({fileId, meeting, onJump}) {
   return <div className="mi-assistant">
     <section id="meeting-assistant" className="mi-assistant-window" role="dialog" aria-label={copy.title} hidden={!open} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}>
       <header className="mi-assistant-header"><div><span className="mi-eyebrow">{copy.assistant}</span><h2>{copy.title}</h2></div><button type="button" className="mi-assistant-close" aria-label={copy.close} onClick={close}>&times;</button></header>
-      <div className="mi-assistant-body">
+      <div className="mi-assistant-body" ref={messageList}>
       <p className="mi-caption mi-muted">{copy.caption}</p>
     {!messages.length && <div className="mi-chat-starters">{copy.starters.map(starter => <button type="button" key={starter} disabled={busy || remaining > 0} onClick={() => submit(starter)}>{starter}</button>)}</div>}
-    {messages.length > 0 && <div className="mi-chat-messages" ref={messageList} aria-live="polite">{displayMessages.map((message, index) => <article className={`mi-chat-message mi-chat-${message.role}`} key={`${message.role}-${index}`}>
+    {messages.length > 0 && <div className="mi-chat-messages" aria-live="polite">{displayMessages.map((message, index) => <article className={`mi-chat-message mi-chat-${message.role}`} key={`${message.role}-${index}`}>
       <span className="mi-eyebrow">{message.role === 'user' ? copy.you : copy.answer}</span><p dir="auto">{message.content}</p>
       {message.contextLimited && <p className="mi-muted">{copy.limited}</p>}
       {message.role === 'assistant' && message.evidence?.length > 0 && <div className="mi-chat-evidence"><span className="mi-muted">{copy.evidence}</span>{message.evidence.map(id => {
@@ -103,9 +103,9 @@ export default function AskThisMeeting({fileId, meeting, onJump}) {
     {error && <div role="alert" className="mi-chat-error">{error}</div>}
     <form className="mi-chat-form" onSubmit={event => {event.preventDefault(); submit()}}><input ref={input} aria-label={copy.input} value={question} onChange={event => setQuestion(event.target.value)} placeholder={copy.placeholder} disabled={busy}/><button className="mi-primary" type="submit" disabled={busy || remaining > 0 || !question.trim()}>{busy ? copy.asking : remaining > 0 ? copy.retry(remaining) : copy.ask}</button></form>
     </section>
-    <button ref={launcher} type="button" className="mi-assistant-launcher" aria-label={open ? copy.close : copy.open} aria-expanded={open} aria-controls="meeting-assistant" onClick={() => open ? close() : setOpen(true)}>
+    <button ref={launcher} type="button" className="mi-assistant-launcher" aria-label={open ? `${copy.title} — ${copy.close}` : copy.title} aria-expanded={open} aria-controls="meeting-assistant" onClick={() => open ? close() : setOpen(true)}>
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v3M9 3h6"/><rect x="4" y="6" width="16" height="14" rx="5"/><path d="M1 11v4m22-4v4M9 15h6"/><circle cx="8.5" cy="11" r=".75" fill="currentColor"/><circle cx="15.5" cy="11" r=".75" fill="currentColor"/></svg>
-      <span>{open ? copy.close : copy.title}</span><span aria-hidden="true">{open ? '−' : '+'}</span>
+      <span>{copy.title}</span><span aria-hidden="true">{open ? '−' : '+'}</span>
     </button>
   </div>
 }
