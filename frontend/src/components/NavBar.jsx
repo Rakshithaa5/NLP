@@ -11,10 +11,15 @@ export default function NavBar({tab, activate}) {
   useEffect(() => { checkHealth().then(() => setHealthy(true)).catch(() => setHealthy(false)) }, [])
   const close = () => drawer.current?.close()
   const content = <>
-    <button className="sidebar-header sidebar-toggle" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setCollapsed(v => !v)}>
-      <span className="sidebar-logo" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="3" width="15" height="18" rx="3"/><path d="M3 7h4M3 12h4M3 17h4M10 8h6M10 12h6M10 16h4"/></svg></span>
-      {!collapsed && <span className="sidebar-name">MeetingIntel<span className="brand-caption">A little clarity, after every meeting.</span></span>}
-    </button>
+    <div className="sidebar-header">
+      <Link to="/" className="sidebar-brand" aria-label="MeetingIntel home" onClick={close}>
+        <span className="sidebar-logo" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="3" width="15" height="18" rx="3"/><path d="M3 7h4M3 12h4M3 17h4M10 8h6M10 12h6M10 16h4"/></svg></span>
+        {!collapsed && <span className="sidebar-name">MeetingIntel<span className="brand-caption">A little clarity, after every meeting.</span></span>}
+      </Link>
+      <button className="sidebar-collapse-toggle" type="button" aria-label={collapsed ? 'Open sidebar' : 'Close sidebar'} aria-expanded={!collapsed} title={collapsed ? 'Open sidebar' : 'Close sidebar'} onClick={() => setCollapsed(v => !v)}>
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={collapsed ? 'm6 3 5 5-5 5' : 'm10 3-5 5 5 5'} /></svg>
+      </button>
+    </div>
     <nav className="sidebar-section" aria-label="Main navigation">
       <Link to="/" className="sidebar-item new-meeting" aria-current={pathname === '/' ? 'page' : undefined} onClick={close} title="New meeting">{collapsed ? '＋' : <><span aria-hidden="true">＋</span> New meeting</>}</Link>
       {!collapsed && <span className="sidebar-section-label">Workspace</span>}
@@ -26,7 +31,7 @@ export default function NavBar({tab, activate}) {
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
     <aside className={`sidebar desktop-sidebar${collapsed ? ' sidebar-collapsed' : ''}`}>{content}</aside>
-    <header className="mobile-nav"><span>MeetingIntel</span><button ref={trigger} className="btn btn-secondary" aria-label="Open navigation" aria-haspopup="dialog" onClick={() => drawer.current.showModal()}>Menu</button></header>
+    <header className="mobile-nav"><Link to="/" onClick={close}>MeetingIntel</Link><button ref={trigger} className="btn btn-secondary" aria-label="Open navigation" aria-haspopup="dialog" onClick={() => drawer.current.showModal()}>Menu</button></header>
     <dialog ref={drawer} className="nav-drawer" aria-label="Workspace navigation" onClose={() => trigger.current?.focus()} onClick={e => {if(e.target === drawer.current) close()}}><div className="drawer-content"><button className="btn btn-secondary drawer-close" onClick={close}>Close menu</button>{content}</div></dialog>
   </>
 }
