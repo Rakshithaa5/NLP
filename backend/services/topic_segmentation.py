@@ -85,10 +85,14 @@ def embed_texts(texts: list[str]) -> np.ndarray:
 # ── Stage A: Transcript preparation ──────────────────────────────────────────
 
 def _split_sentences(text: str) -> list[str]:
-    """Sentence-split plain text using spaCy."""
-    from backend.services.preprocessing import _get_nlp
-    doc = _get_nlp()(text)
-    return [s.text.strip() for s in doc.sents if s.text.strip()]
+    """Sentence-split plain text using spaCy, falling back to regex."""
+    try:
+        from backend.services.preprocessing import _get_nlp
+        doc = _get_nlp()(text)
+        return [s.text.strip() for s in doc.sents if s.text.strip()]
+    except Exception:
+        logger.warning("spaCy sentence splitting unavailable; using regex fallback")
+        return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
 
 
 def prepare_units(transcript: str, segments: list[dict]) -> list[dict]:
@@ -259,7 +263,9 @@ _LABEL_STOP = set(
     "yeah yes okay ok right meeting meetings let lets um uh actually basically "
     "really just like know think thanks thank hello hi going got things thing "
     "today everyone people said say sure well gonna want need look bit sort kind "
-    "going going going".split()
+    "going going going sorry worries works fair sounds great perfect good deal "
+    "understood talk load stress totally exactly connect push haven ask hold "
+    "ahead boring bye hey promise urgent honestly thought way".split()
 )
 
 
@@ -292,25 +298,28 @@ def _tfidf_keywords(texts: list[str], top_n: int = 6) -> list[str]:
 
 def _noun_phrase_label(texts: list[str]) -> Optional[str]:
     """Extract the most frequent meaningful noun phrase as a label."""
-    from backend.services.preprocessing import _get_nlp
-    from backend.services.topics import TOPIC_STOP
-    nlp = _get_nlp()
-    combined = " ".join(texts)[:4000]  # cap for speed
-    doc = nlp(combined)
-    counts: dict[str, int] = {}
-    for chunk in doc.noun_chunks:
-        tokens = [t for t in chunk if not t.is_stop and t.is_alpha and len(t.text) > 2
-                  and t.lower_ not in TOPIC_STOP]
-        if len(tokens) < 2:
-            continue
-        phrase = " ".join(t.text for t in tokens).strip()
-        if phrase:
-            counts[phrase.casefold()] = counts.get(phrase.casefold(), 0) + 1
-    if not counts:
+    try:
+        from backend.services.preprocessing import _get_nlp
+        from backend.services.topics import TOPIC_STOP
+        nlp = _get_nlp()
+        combined = " ".join(texts)[:4000]  # cap for speed
+        doc = nlp(combined)
+        counts: dict[str, int] = {}
+        for chunk in doc.noun_chunks:
+            tokens = [t for t in chunk if not t.is_stop and t.is_alpha and len(t.text) > 2
+                      and t.lower_ not in TOPIC_STOP]
+            if len(tokens) < 2:
+                continue
+            phrase = " ".join(t.text for t in tokens).strip()
+            if phrase:
+                counts[phrase.casefold()] = counts.get(phrase.casefold(), 0) + 1
+        if not counts:
+            return None
+        best = max(counts, key=lambda k: (counts[k], len(k)))
+        return " ".join(w.capitalize() for w in best.split())
+    except Exception:
+        logger.warning("Noun phrase labeling unavailable; falling back to TF-IDF keywords")
         return None
-    best = max(counts, key=lambda k: (counts[k], len(k)))
-    # Title-case the best phrase
-    return " ".join(w.capitalize() for w in best.split())
 
 
 def label_topic(texts: list[str]) -> tuple[str, list[str]]:
@@ -323,6 +332,106 @@ def label_topic(texts: list[str]) -> tuple[str, list[str]]:
     if not label:
         label = "General Discussion"
     return label, keywords
+
+
+# ── Groq intelligence topic mapping ──────────────────────────────────────────
+
+def _groq_topics(analysis: Optional[dict]) -> list[dict]:
+    """Extract validated Groq topics from analysis, sorted by first segment id."""
+    if not analysis:
+        return []
+    intel = (analysis.get("topics") or {}).get("intelligence") or analysis.get("intelligence") or {}
+    topics = [t for t in (intel.get("topics") or []) if isinstance(t, dict) and t.get("label") and t.get("segment_ids")]
+    return sorted(topics, key=lambda t: min(t["segment_ids"]))
+
+
+def _assign_groq_labels(
+    out_segments: list[dict],
+    groq_topics: list[dict],
+    seg_embeddings: np.ndarray,
+) -> None:
+    """
+    For each output segment, assign the best-matching Groq topic label.
+    Matching is by segment_id overlap first, then by embedding similarity
+    to the Groq topic's evidence text.
+    Mutates out_segments in place.
+    """
+    # Build a unit_index -> groq_topic_id map from segment_ids overlap
+    unit_to_groq: dict[int, int] = {}
+    for gid, gt in enumerate(groq_topics):
+        for sid in gt["segment_ids"]:
+            unit_to_groq[sid] = gid
+
+    # Embed Groq topic evidence texts for similarity fallback
+    groq_evidence_texts = [t.get("evidence") or t["label"] for t in groq_topics]
+    groq_embeddings = embed_texts(groq_evidence_texts) if groq_topics else np.empty((0, 1))
+
+    for i, seg in enumerate(out_segments):
+        unit_indices = set(seg.get("unit_indices") or [])
+        # Count votes from overlapping unit->groq mappings
+        votes: dict[int, int] = {}
+        for uid in unit_indices:
+            if uid in unit_to_groq:
+                gid = unit_to_groq[uid]
+                votes[gid] = votes.get(gid, 0) + 1
+
+        if votes:
+            best_gid = max(votes, key=lambda g: votes[g])
+        elif groq_topics:
+            # Fallback: cosine similarity between segment embedding and groq topic embeddings
+            sims = cosine_similarity(seg_embeddings[i].reshape(1, -1), groq_embeddings)[0]
+            best_gid = int(np.argmax(sims))
+        else:
+            continue
+
+        gt = groq_topics[best_gid]
+        seg["label"] = gt["label"]
+        seg["keywords"] = gt.get("keywords") or seg.get("keywords") or []
+        seg["canonical_topic_id"] = best_gid
+
+
+def _rebuild_canonical_from_groq(
+    out_segments: list[dict],
+    groq_topics: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Rebuild canonical_topics and evolution lists using Groq labels."""
+    canonical_topics = []
+    for gid, gt in enumerate(groq_topics):
+        occurrences = [s for s in out_segments if s.get("canonical_topic_id") == gid]
+        if not occurrences:
+            continue
+        first = occurrences[0]
+        canonical_topics.append({
+            "canonical_topic_id": gid,
+            "label": gt["label"],
+            "keywords": gt.get("keywords") or [],
+            "occurrence_count": len(occurrences),
+            "first_segment_index": first["segment_index"],
+            "first_start_time": first["start_time"],
+            "total_sentences": sum(s["sentence_count"] for s in occurrences),
+            "segment_indices": [s["segment_index"] for s in occurrences],
+        })
+
+    evolution = [
+        {
+            "canonical_topic_id": ct["canonical_topic_id"],
+            "label": ct["label"],
+            "occurrences": [
+                {
+                    "segment_index": s["segment_index"],
+                    "start_time": s["start_time"],
+                    "end_time": s["end_time"],
+                    "excerpt": s["excerpt"],
+                    "related_actions": s.get("related_actions", []),
+                    "related_decisions": s.get("related_decisions", []),
+                    "related_questions": s.get("related_questions", []),
+                }
+                for s in out_segments if s.get("canonical_topic_id") == ct["canonical_topic_id"]
+            ],
+        }
+        for ct in canonical_topics
+    ]
+    return canonical_topics, evolution
 
 
 # ── Stage F: Evidence association ─────────────────────────────────────────────
@@ -427,7 +536,7 @@ def analyze_topics(
     ])
     canonical_ids = assign_canonical_topics(raw_segments, seg_embeddings)
 
-    # Stage E: label each canonical topic
+    # Stage E: label each canonical topic (TF-IDF fallback)
     canonical_texts: dict[int, list[str]] = {}
     for seg, cid in zip(raw_segments, canonical_ids):
         canonical_texts.setdefault(cid, []).extend(seg["texts"])
@@ -440,7 +549,6 @@ def analyze_topics(
     out_segments = []
     for seg, cid in zip(raw_segments, canonical_ids):
         label, keywords = canonical_labels[cid]
-        # Representative excerpt: first 2 sentences of segment
         excerpt = " ".join(seg["texts"][:2])[:300]
         out_seg = {
             "segment_index": seg["segment_index"],
@@ -457,56 +565,57 @@ def analyze_topics(
         }
         out_segments.append(out_seg)
 
-    # Build canonical topic summaries
-    canonical_topics = []
-    for cid in sorted(canonical_texts.keys()):
-        label, keywords = canonical_labels[cid]
-        occurrences = [s for s in out_segments if s["canonical_topic_id"] == cid]
-        first = occurrences[0]
-        total_sentences = sum(s["sentence_count"] for s in occurrences)
-        canonical_topics.append({
-            "canonical_topic_id": cid,
-            "label": label,
-            "keywords": keywords,
-            "occurrence_count": len(occurrences),
-            "first_segment_index": first["segment_index"],
-            "first_start_time": first["start_time"],
-            "total_sentences": total_sentences,
-            "segment_indices": [s["segment_index"] for s in occurrences],
-        })
-
     # Stage F: associate evidence
-    evidence_map = {}
     if analysis:
         evidence_map = associate_evidence(out_segments, analysis)
+        for seg in out_segments:
+            ev = evidence_map.get(seg["segment_index"], {})
+            seg["related_actions"] = ev.get("actions", [])
+            seg["related_decisions"] = ev.get("decisions", [])
+            seg["related_questions"] = ev.get("questions", [])
 
-    # Attach evidence to segments
-    for seg in out_segments:
-        ev = evidence_map.get(seg["segment_index"], {})
-        seg["related_actions"] = ev.get("actions", [])
-        seg["related_decisions"] = ev.get("decisions", [])
-        seg["related_questions"] = ev.get("questions", [])
-
-    # Build evolution: per canonical topic, ordered occurrences
-    evolution = []
-    for ct in canonical_topics:
-        occ_segs = [s for s in out_segments if s["canonical_topic_id"] == ct["canonical_topic_id"]]
-        evolution.append({
-            "canonical_topic_id": ct["canonical_topic_id"],
-            "label": ct["label"],
-            "occurrences": [
-                {
-                    "segment_index": s["segment_index"],
-                    "start_time": s["start_time"],
-                    "end_time": s["end_time"],
-                    "excerpt": s["excerpt"],
-                    "related_actions": s["related_actions"],
-                    "related_decisions": s["related_decisions"],
-                    "related_questions": s["related_questions"],
-                }
-                for s in occ_segs
-            ],
-        })
+    # Stage G: override labels with Groq intelligence topics when available
+    groq_topics = _groq_topics(analysis)
+    if groq_topics:
+        logger.info("Applying %d Groq topic labels to %d segments", len(groq_topics), len(out_segments))
+        _assign_groq_labels(out_segments, groq_topics, seg_embeddings)
+        canonical_topics, evolution = _rebuild_canonical_from_groq(out_segments, groq_topics)
+    else:
+        # Build canonical topic summaries from TF-IDF labels
+        canonical_topics = []
+        for cid in sorted(canonical_texts.keys()):
+            label, keywords = canonical_labels[cid]
+            occurrences = [s for s in out_segments if s["canonical_topic_id"] == cid]
+            first = occurrences[0]
+            canonical_topics.append({
+                "canonical_topic_id": cid,
+                "label": label,
+                "keywords": keywords,
+                "occurrence_count": len(occurrences),
+                "first_segment_index": first["segment_index"],
+                "first_start_time": first["start_time"],
+                "total_sentences": sum(s["sentence_count"] for s in occurrences),
+                "segment_indices": [s["segment_index"] for s in occurrences],
+            })
+        evolution = [
+            {
+                "canonical_topic_id": ct["canonical_topic_id"],
+                "label": ct["label"],
+                "occurrences": [
+                    {
+                        "segment_index": s["segment_index"],
+                        "start_time": s["start_time"],
+                        "end_time": s["end_time"],
+                        "excerpt": s["excerpt"],
+                        "related_actions": s.get("related_actions", []),
+                        "related_decisions": s.get("related_decisions", []),
+                        "related_questions": s.get("related_questions", []),
+                    }
+                    for s in out_segments if s["canonical_topic_id"] == ct["canonical_topic_id"]
+                ],
+            }
+            for ct in canonical_topics
+        ]
 
     return {
         "segments": out_segments,
